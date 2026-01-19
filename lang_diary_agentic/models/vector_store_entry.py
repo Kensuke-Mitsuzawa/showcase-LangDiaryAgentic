@@ -1,9 +1,13 @@
 from langchain_core.pydantic_v1 import BaseModel, Field
-from typing import Literal
+from typing import Literal, Any
+from ..configs import languages_code
 
 
 class ErrorRecord(BaseModel):
     """Schema for an error entry in the database."""
+    language_diary_text: str = Field()
+    
+    language_annotation_text: str = Field()
     
     error_rule: str = Field(
         description="The specific grammatical rule violated (e.g. 'Gender agreement for furniture')."
@@ -24,3 +28,9 @@ class ErrorRecord(BaseModel):
     def to_string(self):
         """Helper to format this for embedding."""
         return f"{self.category} Error: {self.error_rule}. Example: '{self.example_phrase}' -> '{self.correction}'"
+
+    
+    def model_post_init(self, __context: Any) -> None:
+        # manipulation on fields
+        assert self.language_annotation_text in languages_code, f"The language code {self.language_annotation_text} is not valid. Check the language code in 2 character."
+        assert self.language_diary_text in languages_code, f"The language code {self.language_diary_text} is not valid. Check the language code in 2 character."

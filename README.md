@@ -40,3 +40,10 @@ HF_TOKEN='[your_huggingface_token_here]'
 # Optional: Custom model cache location (default is ~/.cache)
 # HF_HOME='/abs/path/to/large/storage'
 ```
+
+
+# Web App
+
+```
+streamlit run ui/main.py
+```

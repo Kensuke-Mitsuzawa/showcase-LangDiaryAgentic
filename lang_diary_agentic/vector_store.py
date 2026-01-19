@@ -86,7 +86,18 @@ def add_error_logs(records: List[ErrorRecord]):
 # end def
 
 
-def query_past_errors(query_text: str, k: int = 3):
+def query_past_errors(query_text: str,
+                      lang_annotation: str,
+                      lang_diary_body: str, 
+                      k: int = 3):
     db = get_vector_store()
-    results = db.similarity_search(query_text, k=k)
+    
+    filter_dict={
+        "$and": [
+            {"language_annotation_text": {"$eq": lang_annotation}},
+            {"language_diary_text": {"$eq": lang_diary_body}}
+        ]
+    }
+    results = db.similarity_search(query_text, filter=filter_dict, k=k)
+    
     return [doc.page_content for doc in results]

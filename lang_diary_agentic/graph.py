@@ -19,7 +19,7 @@ from .vector_store import query_past_errors, add_error_logs
 from .logging_configs import apply_logging_suppressions
 from .models.vector_store_entry import ErrorRecord
 from .db_handler import HandlerDairyDB, UnknownExpressionEntry, DiaryEntry
-from .configs import GENERATION_DB_PATH
+from .configs import GENERATION_DB_PATH, languages_code
 
 apply_logging_suppressions()
 
@@ -32,6 +32,7 @@ model_id_large = "microsoft/Phi-3-mini-4k-instruct"
 
 
 
+
 # --- Define State dictionary ---
 class AgentState(TypedDict):
     draft_text: str
@@ -39,8 +40,8 @@ class AgentState(TypedDict):
     final_response: str
     suggestion: str
     new_errors: str
-    target_lang: ty.Optional[str]  # e.g., "French"
-    source_lang: ty.Optional[str]  # e.g., "English"    
+    lang_annotation: ty.Optional[str]  # e.g., "French"
+    lang_diary_body: ty.Optional[str]  # e.g., "English"    
     bracket_text: ty.List[str]
 
 
@@ -98,27 +99,37 @@ def node_language_detect(state: AgentState):
     """
     logger.info("--- [0] Detecting Language ---")
     
+    draft_text = state["draft_text"]
+    seq_text_blanket = [x.group() for x in re.finditer(r'\[[^]]+\]', draft_text)]    
+    
     # If user already provided them via UI, skip detection
-    if state.get("target_lang") and state.get("source_lang"):
-        logger.info(f"   Using provided: {state['target_lang']} (Target)")
-        return {} # No state update needed
+    if state.get("lang_annotation") and state.get("lang_diary_body"):
+        _language_diary = state.get("lang_diary_body").strip()
+        _language_annotation = state.get("lang_annotation").strip()
+
+        assert _language_diary in languages_code, f"The language code {_language_diary} is not valid. Check the language code in 2 character."
+        assert _language_annotation in languages_code, f"The language code {_language_annotation} is not valid. Check the language code in 2 character."
+
+        return {
+            "lang_annotation": _language_annotation,
+            "lang_diary_body": _language_diary,
+            "bracket_text": seq_text_blanket
+        }
     # end if
 
     # Otherwise, ask the Small LLM
     logger.info("Missing languages. Asking Small LLM...")
 
-    draft_text = state["draft_text"]
 
     # Since this part is supposed to be shorter. So, I use the tranditional ML model.
-    seq_text_blanket = [x.group() for x in re.finditer(r'\[[^]]+\]', draft_text)]
     language_annotation = detect(' '.join(seq_text_blanket))
 
     draft_text_without_blanket = re.sub(r'\[.+\]', '', draft_text)
     language_target = detect(draft_text_without_blanket)
 
     return {
-        "target_lang": language_target,
-        "source_lang": language_annotation,
+        "lang_diary_body": language_target,
+        "lang_annotation": language_annotation,
         "bracket_text": seq_text_blanket
     }
     
@@ -130,7 +141,10 @@ def node_retriever(state: AgentState) -> ty.Dict:
     Dependency: vector DB.
     """
     logging.info("--- Node 1: Retrieve ---")
-    past_errors = query_past_errors(state["draft_text"])
+    past_errors = query_past_errors(
+        query_text=state["draft_text"], 
+        lang_annotation=state["lang_annotation"], 
+        lang_diary_body=state["lang_diary_body"])
     context_str = "\n".join([f"- {err}" for err in past_errors]) if past_errors else "None"
     return {"retrieved_context": context_str}
 
@@ -143,8 +157,8 @@ def node_processor(state: AgentState) -> ty.Dict:
     # Phi-3 uses <|user|> and <|assistant|> tokens
 
     sub_phrase_language_pair: str = ""
-    source_lang = state["source_lang"]
-    target_lang = state["target_lang"]
+    source_lang = state["lang_annotation"]
+    target_lang = state["lang_diary_body"]
 
     if source_lang is None or target_lang is None:
         sub_phrase_language_pair = ""
@@ -178,7 +192,7 @@ def node_processor(state: AgentState) -> ty.Dict:
 
     prompt = PromptTemplate(
         template=template,
-        input_variables=["context", "draft", "source_lang", "target_lang"]
+        input_variables=["context", "draft"]
     )
     
     chain = prompt | llm_large | StrOutputParser()
@@ -280,10 +294,12 @@ def node_archivist(state: AgentState) -> ty.Dict:
     error_list_obj = []
     for err in error_list:
         # Create your Pydantic object or Dict here
+        err['language_diary_text'] = state['lang_diary_body']
+        err['language_annotation_text'] = state['lang_annotation']
         record = ErrorRecord(**err)
         error_list_obj.append(record)
     # end for
-    
+
     if len(error_list_obj) == 0:
         logger.debug(f"Found {len(error_list)} errors.")
         add_error_logs(error_list_obj)
@@ -301,10 +317,10 @@ def node_save_duckdb(state: AgentState):
     diary_date = state.get("date_diary", str(date.today()))
     created_at = datetime.now()
 
-    language_source = state.get("target_lang", "Unknown")
+    language_source = state.get("lang_diary_body", "Unknown")
     language_source = "Unknown" if language_source is None else language_source
 
-    language_annotation = state.get("source_lang", "Unknown")
+    language_annotation = state.get("lang_annotation", "Unknown")
     language_annotation = "Unknown" if language_annotation is None else language_annotation
 
     diary_entry = DiaryEntry(

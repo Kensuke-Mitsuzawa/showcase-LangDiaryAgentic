@@ -2,6 +2,7 @@ from pathlib import Path
 import streamlit as st
 import sys
 import os
+import json
 
 # Ensure we can import modules from 'app'
 # sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -22,13 +23,13 @@ with st.sidebar:
     st.markdown("""
     1. **Write** text with mixed languages: *'Je veux une [apple].'*
     2. **Retriever** looks up your past errors.
-    3. **Phi-3** translates & corrects you.
+    3. **LLMs** translates & corrects you.
     4. **Archivist** saves new errors to memory.
     """)
 
-user_input = st.text_area("Write your diary entry:", height=150, placeholder="Example: Aujourd'hui je suis allé au [supermarket].")
-target_lang = st.text_area("The language that you write the diary entry.")
-source_lang = st.text_area("The language that you use for the annotation [LANG].")
+user_input = st.text_area("Write your diary entry:", height=150, placeholder="Example: Je m’appelle Jessica. Je suis une [girl], je suis française et j’ai [13 years old]. Je vais à l’école à Nice, mais j’habite à Cagnes-Sur-Mer. J’ai deux [brothers].")
+lang_diary_body = st.text_input("The language that you write the diary entry.", placeholder="Language code. Example: fr")
+lang_annotation = st.text_input("The language that you use for the annotation [LANG].", placeholder="Language code. Example: en")
 
 if st.button("Analyze Entry"):
     if user_input:
@@ -36,8 +37,8 @@ if st.button("Analyze Entry"):
             try:
                 result = app_graph.invoke({
                     "draft_text": user_input,
-                    "target_lang": target_lang,
-                    "source_lang": source_lang
+                    "lang_diary_body": lang_diary_body,
+                    "lang_annotation": lang_annotation
                 })
                 
                 col1, col2 = st.columns(2)
@@ -52,9 +53,18 @@ if st.button("Analyze Entry"):
                         st.info(f"**Recall:**\n{result['retrieved_context']}")
                     else:
                         st.caption("No relevant past errors found.")
-                        
+                    # end if
                     if "None" not in result["new_errors"]:
-                        st.warning(f"**New Learning Saved:**\n{result['new_errors']}")
+                        st.warning("**New Learning Saved:**\n")
+                        _obj_error_analysis = json.loads(result['new_errors'])
+                        for _entry in _obj_error_analysis:
+                            _document_output = ""
+                            _document_output += f"Error-category: {_entry['category']}\n\n"
+                            _document_output += f"Error-type: {_entry['error_rule']}\n\n"
+                            _document_output += f"Correction: {_entry['correction']}\n\n"
+                            _document_output += f"Input: {_entry['example_phrase']}\n\n"
+                            st.warning(f"{_document_output}")                            
+                        # end for
             except Exception as e:
                 st.error(f"An error occurred: {e}")
     else:
