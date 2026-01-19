@@ -1,11 +1,16 @@
 import os
+import logging
+from typing import List
+
+
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 
 from .models.vector_store_entry import ErrorRecord
+from .configs import ErrorVectorDB_PATH
 
+logger = logging.getLogger(__name__)
 
-PERSIST_DIRECTORY = "./data/chroma_db"
 
 def get_vector_store():
     # Uses a free, local model (runs fast on CPU)
@@ -13,32 +18,72 @@ def get_vector_store():
     embedding_function = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     
     vector_store = Chroma(
-        persist_directory=PERSIST_DIRECTORY,
+        persist_directory=ErrorVectorDB_PATH,
         embedding_function=embedding_function,
         collection_name="lingualog_errors"
     )
     return vector_store
 
-def add_error_log(record: ErrorRecord):
+
+# def add_error_log(record: ErrorRecord):
+#     db = get_vector_store()
+    
+#     # 1. Content: Used for similarity search (Embeddings)
+#     # We use the helper we defined in schemas.py
+#     text_content = record.to_string()
+    
+#     # 2. Metadata: specific fields you can filter on later
+#     metadata = {
+#         "category": record.category,
+#         "rule": record.error_rule,
+#         "correction": record.correction
+#     }
+    
+#     # Add to Chroma
+#     db.add_texts(
+#         texts=[text_content],
+#         metadatas=[metadata]
+#     )
+#     db.persist()
+
+
+def add_error_logs(records: List[ErrorRecord]):
+    """
+    Save a batch of error logs to memory.
+    Efficiently inserts multiple records in one DB transaction.
+    """
+    if not records:
+        return
+
     db = get_vector_store()
     
-    # 1. Content: Used for similarity search (Embeddings)
-    # We use the helper we defined in schemas.py
-    text_content = record.to_string()
+    # Prepare lists for batch insertion
+    batch_texts = []
+    batch_metadatas = []
     
-    # 2. Metadata: specific fields you can filter on later
-    metadata = {
-        "category": record.category,
-        "rule": record.error_rule,
-        "correction": record.correction
-    }
+    for record in records:
+        # 1. Content: The text to be embedded
+        batch_texts.append(record.to_string())
+        
+        # 2. Metadata: Structured data for filtering
+        batch_metadatas.append({
+            "category": record.category,
+            "rule": record.error_rule,
+            "correction": record.correction
+        })
+    # end for
     
-    # Add to Chroma
+    # 3. Batch Insert (One call to the DB)
+    logger.info(f"   💾 Saving {len(batch_texts)} errors to ChromaDB...")
     db.add_texts(
-        texts=[text_content],
-        metadatas=[metadata]
+        texts=batch_texts,
+        metadatas=batch_metadatas
     )
-    db.persist()
+    # In newer Chroma versions, persist is automatic, but keeping it is safe
+    if hasattr(db, "persist"):
+        db.persist()
+    # end if
+# end def
 
 
 def query_past_errors(query_text: str, k: int = 3):

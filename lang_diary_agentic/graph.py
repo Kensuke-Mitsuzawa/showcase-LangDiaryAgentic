@@ -2,50 +2,63 @@ import torch
 import logging
 import json
 import re
+from datetime import date, datetime
 
 import typing as ty
 from typing import TypedDict
 from langchain_community.llms import HuggingFacePipeline
 from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
+from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import StateGraph, END
-from langchain_core.output_parsers import PydanticOutputParser
 
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 from langdetect import detect
 
-from .vector_store import query_past_errors, add_error_log
+from .vector_store import query_past_errors, add_error_logs
 from .logging_configs import apply_logging_suppressions
 from .models.vector_store_entry import ErrorRecord
-
-parser = PydanticOutputParser(pydantic_object=ErrorRecord)
+from .db_handler import HandlerDairyDB, UnknownExpressionEntry, DiaryEntry
+from .configs import GENERATION_DB_PATH
 
 apply_logging_suppressions()
 
 logger = logging.getLogger(__name__)
 
-# MODEL_ID = "microsoft/Phi-3-mini-4k-instruct"
+
 # model_id_small = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-model_id_large = "Qwen/Qwen2.5-7B-Instruct"
+model_id_large = "microsoft/Phi-3-mini-4k-instruct"
+# model_id_large = "Qwen/Qwen2.5-7B-Instruct"
 
 
 
 # --- Define State dictionary ---
 class AgentState(TypedDict):
     draft_text: str
-    target_lang: ty.Optional[str]  # e.g., "French"
-    source_lang: ty.Optional[str]  # e.g., "English"    
     retrieved_context: str
     final_response: str
+    suggestion: str
     new_errors: str
+    target_lang: ty.Optional[str]  # e.g., "French"
+    source_lang: ty.Optional[str]  # e.g., "English"    
+    bracket_text: ty.List[str]
 
 
 
 def load_local_llm(model_id, max_tokens=500):
     """Helper to load a model pipeline"""
     logger.info(f"⏳ Loading Model: {model_id}...")
+    
     tokenizer = AutoTokenizer.from_pretrained(model_id)
+    
+    # Define the IDs that stop generation. 
+    # 32000 = <|endoftext|>, 32007 = <|end|> (Phi-3 specific)
+    terminators = [
+        tokenizer.eos_token_id,
+        tokenizer.convert_tokens_to_ids("<|end|>"),
+        tokenizer.convert_tokens_to_ids("<|assistant|>") # Safety net
+    ]    
+    
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
         device_map="auto",
@@ -58,6 +71,8 @@ def load_local_llm(model_id, max_tokens=500):
         tokenizer=tokenizer,
         max_new_tokens=max_tokens,
         temperature=0.1,
+        eos_token_id=terminators,
+        pad_token_id=tokenizer.eos_token_id
     )
     return HuggingFacePipeline(pipeline=pipe)
 
@@ -95,55 +110,16 @@ def node_language_detect(state: AgentState):
     draft_text = state["draft_text"]
 
     # Since this part is supposed to be shorter. So, I use the tranditional ML model.
-    seq_text_blanket = [x.group() for x in re.finditer(r'\[.+\]', draft_text)]
+    seq_text_blanket = [x.group() for x in re.finditer(r'\[[^]]+\]', draft_text)]
     language_annotation = detect(' '.join(seq_text_blanket))
 
     draft_text_without_blanket = re.sub(r'\[.+\]', '', draft_text)
     language_target = detect(draft_text_without_blanket)
 
-    # # ---- language detection for the main body ----
-    # template = """<|user|>
-    # Analyze this text. What language is the main text written in, except for the words in [brackets] written in? 
-
-    # Return ONLY a JSON like: {{"lang": "French"}}
-    
-    # Text: {draft}<|end|>
-    # <|assistant|>"""
-    
-    # prompt = PromptTemplate(template=template, input_variables=["draft"])
-    # # We use a JSON parser to ensure safety
-    # chain = prompt | llm_small
-
-    # result_text = chain.invoke({"draft": state["draft_text"]})
-
-    # # ---- extract the json part ----
-    # res_json_text = re.search(r'\{.+\}', result_text)
-    
-    # if res_json_text is None:
-    #     logger.warning(f"Failed to detect the language. The response: {result_text}")
-    #     return {"target_lang": None, "source_lang": None}
-    # # end if
-
-    # result_text_json_part = res_json_text.group(0)
-    # # ---- END: language detection for the main body ----
-    
-    # try:
-    #     result = json.loads(result_text_json_part)
-    #     target_lang = result.get("lang", "Unknown") 
-    #     logger.debug(f'Detected language: {target_lang} (Target) and {language_annotation} (Source)')
-
-    #     return {
-    #         "target_lang": target_lang, 
-    #         "source_lang": language_annotation
-    #     }
-    # except Exception:
-    #     # Fallback if detection fails
-    #     logger.warning(f"Failed to detect the language. The response: {result_text_json_part}")
-    #     return {"target_lang": None, "source_lang": None}
-
     return {
         "target_lang": language_target,
-        "source_lang": language_annotation
+        "source_lang": language_annotation,
+        "bracket_text": seq_text_blanket
     }
     
 
@@ -157,6 +133,7 @@ def node_retriever(state: AgentState) -> ty.Dict:
     past_errors = query_past_errors(state["draft_text"])
     context_str = "\n".join([f"- {err}" for err in past_errors]) if past_errors else "None"
     return {"retrieved_context": context_str}
+
 
 def node_processor(state: AgentState) -> ty.Dict:
     """Node 2: Coach"""
@@ -172,22 +149,33 @@ def node_processor(state: AgentState) -> ty.Dict:
     if source_lang is None or target_lang is None:
         sub_phrase_language_pair = ""
     else:
-        sub_phrase_language_pair = "The bracketed text is written in {source_lang}. The translation target language is {target_lang}."
+        sub_phrase_language_pair = f"The bracketed text is written in {source_lang}. The translation target language is {target_lang}."
     # end if
 
+    json_schema = """
+        "<replaced>corrected draft</replaced>"
+        "<explanation>warning messages.</explanation>"
+        }"""
 
-    template = """<|user|>
-You are a strict language tutor.
-Context (Past Errors): {context}
+    user_content = (
+        "You are a strict language tutor.\n"
+        "Context (Past Errors): {context}\n\n"
+        "Task:\n"
+        "1. Translate bracketed [text] in the Draft to the correct language. {sub_phrase_language_pair}\n"
+        "2. Correct grammar.\n"
+        "3. If the user repeats a mistake from Context, warn them.\n"
+        "IMPORTANT: Return the result ONLY as XML in the following structure:\n"
+        "{json_schema}\n\n"
+        "Draft: {draft}"
+    )
 
-Task:
-1. Translate bracketed [text] in the Draft to the correct language. {sub_phrase_language_pair}
-2. Correct grammar.
-3. If the user repeats a mistake from Context, warn them.
+    chat = [
+        {"role": "user", "content": user_content},
+    ]
 
-Draft: {draft} <|end|>
-<|assistant|>"""
-    
+    tokenizer = llm_large.pipeline.tokenizer
+    template = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
+
     prompt = PromptTemplate(
         template=template,
         input_variables=["context", "draft", "source_lang", "target_lang"]
@@ -198,48 +186,160 @@ Draft: {draft} <|end|>
     response = chain.invoke({
         "draft": state["draft_text"],
         "context": state["retrieved_context"],
-        "sub_phrase_language_pair": sub_phrase_language_pair
+        "sub_phrase_language_pair": sub_phrase_language_pair,
+        "json_schema": json_schema
     })
     
     # Simple cleanup to remove the prompt from the output if the model echos it
-    clean_response = response.split("<|assistant|>")[-1].strip()
+    clean_response = response.split("<|assistant|>")[-1]
+
+    group_replaced = re.search(r'<replaced>(.+)</replaced>', clean_response)
+    group_explanation = re.search(r'<explanation>(.+)</explanation>', clean_response)
+
+    if group_replaced is None:
+        final_response = clean_response
+    else:
+        final_response = group_replaced.group(1)
+    # end if
+
+    if group_explanation is None:
+        explanation = clean_response
+    else:
+        explanation = group_explanation.group(1)
+    # end if
+
+    return {"final_response": final_response, "suggestion": explanation}
+
+
+def extract_xml_errors(text: str):
+    """
+    Parses multiple <error> blocks from the text.
+    Returns a list of dicts: [{'rule': '...', 'phrase': '...', ...}, {...}]
+    """
+    errors = []
     
-    return {"final_response": clean_response}
+    # 1. Find all content inside <error>...</error> tags
+    # re.DOTALL allows the dot (.) to match newlines
+    error_blocks = re.findall(r"<error>(.*?)</error>", text, re.DOTALL)
+    
+    for block in error_blocks:
+        # 2. Extract fields from within each block
+        rule = re.search(r"<rule>(.*?)</rule>", block, re.DOTALL)
+        phrase = re.search(r"<phrase>(.*?)</phrase>", block, re.DOTALL)
+        correction = re.search(r"<correction>(.*?)</correction>", block, re.DOTALL)
+        category = re.search(r"<category>(.*?)</category>", block, re.DOTALL)
+        
+        # Only add if we found the critical fields
+        if rule and correction:
+            errors.append({
+                "error_rule": rule.group(1).strip(),
+                "example_phrase": phrase.group(1).strip() if phrase else "",
+                "correction": correction.group(1).strip(),
+                "category": category.group(1).strip() if category else "None"
+            })
+            
+    return errors
 
 def node_archivist(state: AgentState) -> ty.Dict:
     """Node 3: Archivist"""
     logging.info("--- Node 3: Archive ---")
+        
+    chat = [
+        {
+            "role": "user", 
+            "content": (
+                "You are a strict language grammarian.\n"
+                "Task: Identify ALL grammatical, vocabulary, or spelling errors in the user's draft.\n"
+                "For EACH error, output an XML block exactly like this:\n\n"
+                "<error>\n"
+                "  <rule>The specific rule violated</rule>\n"
+                "  <phrase>The incorrect phrase from text</phrase>\n"
+                "  <correction>The corrected phrase</correction>\n"
+                "  <category>Grammar OR Vocabulary OR Spelling</category>\n"
+                "</error>\n\n"
+                "If there are no errors, output: <no_errors/>\n\n"
+                f"Draft: {state['draft_text']}\n"
+                f"Reference Correction: {state['final_response']}"
+            )
+        }
+    ]
+
+    tokenizer = llm_large.pipeline.tokenizer
+    template = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
+
+    prompt = PromptTemplate(template=template, input_variables=[])
     
-    template = """<|user|>
-Extract grammatical errors from this text as a list. If none, say "None".
-Text: {response} <|end|>
-<|assistant|>"""
+    # Chain: Prompt -> LLM
+    chain = prompt | llm_large
+    response  = chain.invoke({})
+
+    # 4. Extract List using Regex
+    error_list = extract_xml_errors(response)
     
-    prompt = PromptTemplate(
-        template=template,
-        input_variables=["response"],
-        # This auto-generates the "Return JSON with keys..." instructions
-        partial_variables={"format_instructions": parser.get_format_instructions()}
+    # 5. Save to DB (Loop through found errors)
+    error_list_obj = []
+    for err in error_list:
+        # Create your Pydantic object or Dict here
+        record = ErrorRecord(**err)
+        error_list_obj.append(record)
+    # end for
+    
+    if len(error_list_obj) == 0:
+        logger.debug(f"Found {len(error_list)} errors.")
+        add_error_logs(error_list_obj)
+    else:
+        logger.debug("No errors found.")
+    # end if
+    
+    return {"new_errors": json.dumps(error_list)}
+
+def node_save_duckdb(state: AgentState):
+    """New Node: Save everything to DuckDB"""
+    logger.info("--- [4] Saving to DuckDB ---")
+    
+    # Use today's date if not provided
+    diary_date = state.get("date_diary", str(date.today()))
+    created_at = datetime.now()
+
+    language_source = state.get("target_lang", "Unknown")
+    language_source = "Unknown" if language_source is None else language_source
+
+    language_annotation = state.get("source_lang", "Unknown")
+    language_annotation = "Unknown" if language_annotation is None else language_annotation
+
+    diary_entry = DiaryEntry(
+        date_diary=diary_date,
+        language_source=language_source,
+        language_annotation=language_annotation,
+        diary_original=state["draft_text"],
+        diary_replaced=state.get("replaced_text", ""),
+        diary_corrected=state["final_response"],
+        created_at=created_at,
+        primary_id=None
     )
-    
-    # Chain: Prompt -> LLM -> JSON Parser
-    chain = prompt | llm_large | parser
-    
-    try:
-        # result will be an ErrorRecord OBJECT, not a string
-        error_record: ErrorRecord = chain.invoke({"response": state["final_response"]})
-        
-        # Only save if it's a real error
-        if error_record.category != "None":
-            # Save the object, not just text
-            add_error_log(error_record)
-            return {"new_errors": f"Saved: {error_record.error_rule}"}
-        # end if   
-    except Exception as e:
-        logger.error(f"Parsing failed: {e}")
-        return {"new_errors": "None"}
-        
-    return {"new_errors": "None"}
+
+    seq_unknown_expression_entry = []
+    seq_bracket_text = state['bracket_text']
+    for _expression in seq_bracket_text:
+        _unknown_expression_entry = UnknownExpressionEntry(
+            expression=_expression,
+            language_source=language_source,
+            language_annotation=language_annotation,
+            created_at=created_at,
+            primary_id=None
+        )
+        seq_unknown_expression_entry.append(_unknown_expression_entry)
+    # end for
+
+    handler = HandlerDairyDB(GENERATION_DB_PATH)
+    handler.init_db()
+
+    handler.save_diary_entry(diary_entry)
+    for _entry in seq_unknown_expression_entry:
+        handler.save_unknown_expression(_entry)
+    # end for
+
+    return {}    
 
 def init_graph():
     # --- 4. Build Graph ---
@@ -248,12 +348,14 @@ def init_graph():
     workflow.add_node("retriever", node_retriever)
     workflow.add_node("processor", node_processor)
     workflow.add_node("archivist", node_archivist)
+    workflow.add_node("db_saver", node_save_duckdb)
 
     workflow.set_entry_point("detector")
     workflow.add_edge("detector", "retriever")
     workflow.add_edge("retriever", "processor")
     workflow.add_edge("processor", "archivist")
-    workflow.add_edge("archivist", END)
+    workflow.add_edge("archivist", "db_saver") 
+    workflow.add_edge("db_saver", END)
 
     app_graph = workflow.compile()
 
