@@ -787,6 +787,7 @@ dependencies = [
     { name = "langchain" },
     { name = "langchain-community" },
     { name = "langchain-huggingface" },
+    { name = "langdetect" },
     { name = "langgraph" },
     { name = "python-dotenv" },
     { name = "streamlit" },
@@ -807,6 +808,7 @@ requires-dist = [
     { name = "langchain", specifier = "==0.1.12" },
     { name = "langchain-community", specifier = "==0.0.28" },
     { name = "langchain-huggingface", specifier = ">=0.0.3" },
+    { name = "langdetect", specifier = ">=1.0.9" },
     { name = "langgraph", specifier = "==0.0.26" },
     { name = "python-dotenv", specifier = "==1.0.1" },
     { name = "streamlit", specifier = "==1.32.0" },
@@ -904,6 +906,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/e8/fa/88d65b0f696d8d4f3
 wheels = [
     { url = "https://files.pythonhosted.org/packages/68/6a/804fe5ca07129046a4cedc0697222ddde6156cd874c4c4ba29e4d271828a/langchain_text_splitters-0.0.2-py3-none-any.whl", hash = "sha256:13887f32705862c1e1454213cb7834a63aae57c26fcd80346703a1d09c46168d", size = 23539, upload-time = "2024-05-16T03:16:35.727Z" },
 ]
+
+[[package]]
+name = "langdetect"
+version = "1.0.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0e/72/a3add0e4eec4eb9e2569554f7c70f4a3c27712f40e3284d483e88094cc0e/langdetect-1.0.9.tar.gz", hash = "sha256:cbc1fef89f8d062739774bd51eda3da3274006b3661d199c2655f6b3f6d605a0", size = 981474, upload-time = "2021-05-07T07:54:13.562Z" }
 
 [[package]]
 name = "langgraph"

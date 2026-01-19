@@ -27,12 +27,18 @@ with st.sidebar:
     """)
 
 user_input = st.text_area("Write your diary entry:", height=150, placeholder="Example: Aujourd'hui je suis allé au [supermarket].")
+target_lang = st.text_area("The language that you write the diary entry.")
+source_lang = st.text_area("The language that you use for the annotation [LANG].")
 
 if st.button("Analyze Entry"):
     if user_input:
         with st.spinner("Loading local model & thinking... (First run is slow)"):
             try:
-                result = app_graph.invoke({"draft_text": user_input})
+                result = app_graph.invoke({
+                    "draft_text": user_input,
+                    "target_lang": target_lang,
+                    "source_lang": source_lang
+                })
                 
                 col1, col2 = st.columns(2)
                 

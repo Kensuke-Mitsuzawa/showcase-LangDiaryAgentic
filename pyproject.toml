@@ -11,6 +11,7 @@ dependencies = [
     "langchain==0.1.12",
     "langchain-community==0.0.28",
     "langchain-huggingface>=0.0.3",
+    "langdetect>=1.0.9",
     "langgraph==0.0.26",
     "python-dotenv==1.0.1",
     "streamlit==1.32.0",
