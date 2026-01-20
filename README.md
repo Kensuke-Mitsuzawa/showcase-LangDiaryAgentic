@@ -41,6 +41,11 @@ HF_TOKEN='[your_huggingface_token_here]'
 # HF_HOME='/abs/path/to/large/storage'
 ```
 
+## Configuration
+
+The app configurations are found at `lang_diary_agentic/configs.py`.
+
+
 # System Architecture
 
 
@@ -98,17 +103,37 @@ graph TD
 
 
 
-# Web App
+# Deployments
 
-## LLM
+## LLM service
 
-With the server mode,
+There are two choices: `local` or `server`.
+Please switch the mode at `lang_diary_agentic/configs.py`.
+
+### Local mode
+
+Nothing special configuration is necessary.
+Yet, the local machine must be equipped with GPUs.
+
+### Server mode
+
+1. `git clone` this project on the machine equipped with GPU devices.
+2. setting up this project using `nv` command.
+3. launching the API service with the following command,
 
 ```
+# suppose at `./servers/
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
-## Launching Web App
+
+## Web App
+
+### Configurations
+
+Check the configurations `lang_diary_agentic/configs.py`.
+
+### Web App service
 
 A Web GUI to write the diary entries.
 
