@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  lingualog-app:
+    container_name: lingualog_client
+    build: .
+    ports:
+      - "8501:8501"  # Maps Docker port to Laptop port
+    volumes:
+      - ./app:/app             # Syncs code: Save file on laptop -> Updates in Docker
+      - ./chroma_db_data:/data # Persists your Vector DB on your laptop disk
+    env_file:
+      - .env
+    environment:
+      - CHROMA_DB_DIR=/data    # Tells Python where to save the DB inside Docker
+    restart: unless-stopped
