@@ -1,50 +1,15 @@
 import typing as ty
 import logging
 import duckdb
+import datetime
 
-from pydantic import BaseModel, Field
-from datetime import datetime
-
+from .models.generation_records import DiaryEntry, UnknownExpressionEntry
 from .logging_configs import apply_logging_suppressions
 
 apply_logging_suppressions()
 
 logger = logging.getLogger(__name__)
 
-
-
-
-class DiaryEntry(BaseModel):
-    date_diary: str
-    language_source: str
-    language_annotation: str
-    diary_original: str
-    diary_replaced: str
-    diary_corrected: str
-    created_at: datetime = Field(default_factory=datetime.now)    
-    primary_id: ty.Optional[str] = None
-
-    def model_post_init(self, context: ty.Any) -> None:
-        if self.primary_id is None:
-            datetime_str = self.created_at.isoformat()
-            self.primary_id = f"{self.date_diary}_{datetime_str}"
-        # end if
-# end class
-
-
-class UnknownExpressionEntry(BaseModel):
-    expression: str
-    language_source: str
-    language_annotation: str
-    created_at: datetime = Field(default_factory=datetime.now)    
-    primary_id: ty.Optional[str] = None
-
-    def model_post_init(self, context: ty.Any) -> None:
-        if self.primary_id is None:
-            datetime_str = self.created_at.isoformat()
-            self.primary_id = f"{self.expression}_{datetime_str}"
-        # end if
-# end class
 
 
 class HandlerDairyDB():
@@ -135,5 +100,50 @@ class HandlerDairyDB():
         conn.close()
         logger.info("✅ Diary entry saved to DuckDB.")
     # end def
+
+    # ----- fetch -----
+    def fetch_dairy_entry_language(self,  
+                                   language_daiary_body: str,
+                                   language_annotation: ty.Optional[str] = None
+                                   ) -> ty.Optional[ty.List[DiaryEntry]]:
+        conn = duckdb.connect(self.db_path)
+        if language_annotation is None:
+            query = "SELECT * FROM diary_entries WHERE language_source = ?"
+            seq_result = conn.execute(query, (language_daiary_body,)).fetchall()
+        else:
+            query = "SELECT * FROM diary_entries WHERE language_source = ? AND language_annotation = ?"
+            seq_result = conn.execute(query, (language_daiary_body, language_annotation)).fetchall()
+        # end if
+        conn.close()
+
+        if seq_result is None:
+            return None
+        # end for
+
+        stack = []
+        for _entry in seq_result:
+            if isinstance(_entry[1], datetime.datetime):
+                date_diary = _entry[2].isoformat()
+            else:
+                date_diary = _entry[2]
+            # end if
+
+            _entry = DiaryEntry(
+                primary_id=_entry[0],
+                created_at=_entry[1],
+                date_diary=date_diary,
+                language_source=_entry[3],
+                language_annotation=_entry[4],
+                diary_original=_entry[5],
+                diary_replaced=_entry[6],
+                diary_corrected=_entry[7]
+            )
+            stack.append(_entry)
+        # end for
+
+        return stack
+    # end def
+
+
 
 

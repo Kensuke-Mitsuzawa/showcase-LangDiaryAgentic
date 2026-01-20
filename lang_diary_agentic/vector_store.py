@@ -68,8 +68,12 @@ def add_error_logs(records: List[ErrorRecord]):
         # 2. Metadata: Structured data for filtering
         batch_metadatas.append({
             "category": record.category,
-            "rule": record.error_rule,
-            "correction": record.correction
+            "error_rule": record.error_rule,
+            "correction": record.correction,
+            "example_phrase": record.example_phrase,
+            "primary_id_DiaryEntry": record.primary_id_DiaryEntry,
+            "language_diary_text": record.language_diary_text,
+            "language_annotation_text": record.language_annotation_text
         })
     # end for
     

@@ -43,7 +43,9 @@ class AgentState(TypedDict):
     lang_annotation: ty.Optional[str]  # e.g., "French"
     lang_diary_body: ty.Optional[str]  # e.g., "English"    
     bracket_text: ty.List[str]
-
+    primary_id_DiaryEntry: str
+    diary_date: str
+    created_at: datetime
 
 
 def load_local_llm(model_id, max_tokens=500):
@@ -289,33 +291,44 @@ def node_archivist(state: AgentState) -> ty.Dict:
 
     # 4. Extract List using Regex
     error_list = extract_xml_errors(response)
+
+    diary_date = state.get("date_diary", str(date.today()))
+    created_at = datetime.now()
+    datetime_str = created_at.isoformat()
+    primary_id_DiaryEntry = f"{diary_date}_{datetime_str}"
     
     # 5. Save to DB (Loop through found errors)
     error_list_obj = []
     for err in error_list:
         # Create your Pydantic object or Dict here
+        err['primary_id_DiaryEntry'] = primary_id_DiaryEntry
         err['language_diary_text'] = state['lang_diary_body']
         err['language_annotation_text'] = state['lang_annotation']
         record = ErrorRecord(**err)
         error_list_obj.append(record)
     # end for
 
-    if len(error_list_obj) == 0:
+    if len(error_list_obj) > 0:
         logger.debug(f"Found {len(error_list)} errors.")
         add_error_logs(error_list_obj)
     else:
         logger.debug("No errors found.")
     # end if
     
-    return {"new_errors": json.dumps(error_list)}
+    return {
+        "new_errors": json.dumps(error_list), 
+        "primary_id_DiaryEntry": primary_id_DiaryEntry,
+        "diary_date": diary_date,
+        "created_at": created_at
+    }
 
 def node_save_duckdb(state: AgentState):
     """New Node: Save everything to DuckDB"""
     logger.info("--- [4] Saving to DuckDB ---")
     
     # Use today's date if not provided
-    diary_date = state.get("date_diary", str(date.today()))
-    created_at = datetime.now()
+    diary_date = state["diary_date"]
+    created_at = state["created_at"]
 
     language_source = state.get("lang_diary_body", "Unknown")
     language_source = "Unknown" if language_source is None else language_source
@@ -331,7 +344,7 @@ def node_save_duckdb(state: AgentState):
         diary_replaced=state.get("replaced_text", ""),
         diary_corrected=state["final_response"],
         created_at=created_at,
-        primary_id=None
+        primary_id=state["primary_id_DiaryEntry"]
     )
 
     seq_unknown_expression_entry = []

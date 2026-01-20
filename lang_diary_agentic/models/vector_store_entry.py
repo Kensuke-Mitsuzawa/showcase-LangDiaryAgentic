@@ -1,13 +1,17 @@
-from langchain_core.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 from typing import Literal, Any
 from ..configs import languages_code
 
 
 class ErrorRecord(BaseModel):
     """Schema for an error entry in the database."""
-    language_diary_text: str = Field()
+    primary_id_DiaryEntry: str = Field(
+        description="field `primary_id` of the DiaryEntry."
+    )
     
-    language_annotation_text: str = Field()
+    language_diary_text: str = Field(description="the language used to write the diary.")
+    
+    language_annotation_text: str = Field(description="the language used to write the annotation.")
     
     error_rule: str = Field(
         description="The specific grammatical rule violated (e.g. 'Gender agreement for furniture')."
