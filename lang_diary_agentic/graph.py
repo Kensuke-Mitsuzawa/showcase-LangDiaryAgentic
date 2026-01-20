@@ -2,6 +2,7 @@ import torch
 import logging
 import json
 import re
+import copy
 from datetime import date, datetime
 
 import typing as ty
@@ -44,6 +45,7 @@ class AgentState(TypedDict):
     suggestion_response: str
     new_errors: str
     unkown_expressions: ty.List[ty.Dict[str, str]]
+    total_review: str
     # meta-information
     lang_annotation: ty.Optional[str]  # e.g., "fr"
     lang_diary_body: ty.Optional[str]  # e.g., "en"
@@ -168,6 +170,7 @@ def node_language_detect(state: AgentState):
     return {
         "lang_diary_body": language_target,
         "lang_annotation": language_annotation,
+        "unkown_expressions": seq_text_blanket
     }
     
 
@@ -177,7 +180,7 @@ def node_retriever(state: AgentState) -> ty.Dict:
     Operation: fetch entries from the vector DB.
     Dependency: vector DB.
     """
-    logging.info("--- Node 1: Retrieve ---")
+    logging.info("--- Node: Retrieve ---")
     past_errors = query_past_errors(
         query_text=state["draft_text"], 
         lang_annotation=state["lang_annotation"], 
@@ -208,34 +211,33 @@ def __extract_xml_errors_node_processor(text: str, is_skip_1st_error_tag: bool =
     if is_skip_1st_error_tag and len(seq_translations) == 1:
         return []
     # end if
-    
-    for _i_block, block in enumerate(seq_translations):
-        if _i_block == 0 and is_skip_1st_error_tag:
+
+    if is_skip_1st_error_tag:
+        translation_text_source = seq_translations[1]
+    else:
+        translation_text_source = text
+    # end if
+
+    seq_xml_container = re.findall(r'<bracket>(.*?)</bracket>[\s\n]+<translation>(.*?)</translation>', translation_text_source, re.DOTALL)
+    for _i_block, block in enumerate(seq_xml_container):
+        # the block should be (original, translation)
+        if len(block) != 2:
             continue
         # end if
-
-        # 2. Extract fields from within each block
-        _exp_original = re.search(r"<bracket>(.*?)</bracket>", block, re.DOTALL)
-        _exp_translation = re.search(r"<translation>(.*?)</translation>", block, re.DOTALL)
         
-        # Only add if we found the critical fields
-        if _exp_original and _exp_translation:
-            errors.append({
-                "expression_original": _exp_original.group(1).strip(),
-                "expression_translation": _exp_translation.group(1).strip() if _exp_translation else "",
-            })
-            
+        errors.append({
+            "expression_original": block[0],
+            "expression_translation": block[1]
+        })
+    # end for
     return errors
 
-def node_processor(state: AgentState) -> ty.Dict:
+def node_translator(state: AgentState) -> ty.Dict:
     """Node 2: Coach"""
-    logging.info("--- Node 2: Process ---")
+    logging.info("--- Node: translator ---")
 
     is_processor_success = True
     
-    # We use a PromptTemplate designed for instruction-tuned models (Phi-3 format)
-    # Phi-3 uses <|user|> and <|assistant|> tokens
-
     sub_phrase_language_pair: str = ""
     lang_annotation = state["lang_annotation"]
     lang_diary_body = state["lang_diary_body"]
@@ -246,8 +248,7 @@ def node_processor(state: AgentState) -> ty.Dict:
         sub_phrase_language_pair = f"The bracketed text is written in {lang_annotation}. The translation target language is {lang_diary_body}."
     # end if
 
-    json_schema = """
-        "<replaced>translated draft</replaced>"
+    xml_schema = """
         "<translations>\n"
         "   <bracket>bracketed [text]</bracket>"
         "   <translation>corresponding translation</translation>"        
@@ -255,13 +256,12 @@ def node_processor(state: AgentState) -> ty.Dict:
         }"""
 
     user_content = (
-        "You are a strict language tutor.\n"
-        "Context (Past Errors): {context}\n\n"
+        "You are a translator.\n"
         "Task:\n"
-        "1. Translate bracketed [text] in the Draft to the correct language. {sub_phrase_language_pair}\n"
+        "Translate text in bracketed [text] one by one. {sub_phrase_language_pair}\n"
         "IMPORTANT: Return the result ONLY as XML in the following structure:\n"
-        "{json_schema}\n\n"
-        "Draft: {draft}"
+        "{xml_schema}\n\n"
+        "INPUT: {unkown_expressions}"
     )
 
     chat = [
@@ -272,17 +272,16 @@ def node_processor(state: AgentState) -> ty.Dict:
 
     prompt = PromptTemplate(
         template=template,
-        input_variables=["context", "draft"]
+        input_variables=[]
     )
     
     chain = prompt | llm_large | StrOutputParser()
     
     response = chain.invoke({
-        "draft": state["draft_text"],
-        "context": state["retrieved_context"],
+        "unkown_expressions": state['unkown_expressions'], 
         "sub_phrase_language_pair": sub_phrase_language_pair,
         "lang_annotation": lang_annotation,
-        "json_schema": json_schema
+        "xml_schema": xml_schema
     })
 
     # Simple cleanup to remove the prompt from the output if the model echos it
@@ -290,20 +289,15 @@ def node_processor(state: AgentState) -> ty.Dict:
 
     seq_translations = __extract_xml_errors_node_processor(clean_response)
 
+    # replace the bracketed [text] one-by-one
+    draft_text = copy.deepcopy(state['draft_text'])
+    for _translation_obj in seq_translations:
+        draft_text = draft_text.replace(_translation_obj['expression_original'], _translation_obj['expression_translation'])
+    # end for
 
-    group_replaced = re.findall(r'<replaced>(.+)</replaced>', clean_response)
-    if group_replaced == []:
-        logger.warning(f"Regex error. Return the full response. Response={clean_response}")
-        final_response = clean_response
-        is_processor_success = False
-    else:
-        final_response = group_replaced[-1]
-        final_response = final_response.replace('[', '').replace(']', '')
-    # end if
-
-    logger.debug(f"Correction: {final_response}")
+    logger.debug(f"Correction: {draft_text}")
     return {
-        "final_response": final_response,
+        "final_response": draft_text,
         "is_processor_success": is_processor_success,
         "unkown_expressions": seq_translations
     }
@@ -355,7 +349,7 @@ def __extract_xml_errors_node_archivist(text: str, is_skip_1st_error_tag: bool =
 
 def node_archivist(state: AgentState) -> ty.Dict:
     """Node 3: Archivist"""
-    logging.info("--- Node 3: Archive ---")
+    logging.info("--- Node: Archive ---")
 
     # set the meta-info first
     diary_date = state.get("date_diary", str(date.today()))
@@ -401,7 +395,6 @@ def node_archivist(state: AgentState) -> ty.Dict:
 
     # 4. Extract List using Regex
     error_list = __extract_xml_errors_node_archivist(response)
-    
     # 5. Save to DB (Loop through found errors)
     error_list_obj = []
     for err in error_list:
@@ -427,31 +420,20 @@ def node_archivist(state: AgentState) -> ty.Dict:
     # end if
     
     return {
-        "new_errors": json.dumps(error_list), 
+        "new_errors": error_list, 
         "primary_id_DiaryEntry": primary_id_DiaryEntry,
         "diary_date": diary_date,
         "created_at": created_at
     }
-
 
 
 def node_rewriter(state: AgentState) -> ty.Dict:
     """Node: Rewritting"""
     logging.info("--- Node: Rewriting ---")
 
-    # set the meta-info first
-    diary_date = state.get("date_diary", str(date.today()))
-    created_at = datetime.now()
-    datetime_str = created_at.isoformat()
-    primary_id_DiaryEntry = f"{diary_date}_{datetime_str}"
-
     # do nothing if `is_processor_success` is False
     if not state["is_processor_success"]:
-        return {
-        "primary_id_DiaryEntry": primary_id_DiaryEntry,
-        "diary_date": diary_date,
-        "created_at": created_at
-    }
+        return {}
     # end if
     
     chat = [
@@ -483,7 +465,7 @@ def node_rewriter(state: AgentState) -> ty.Dict:
         "level_rewriting": state['level_rewriting']
     })
 
-    group_replaced = re.findall(r'<rewriting>(.+)</rewriting>', response)
+    group_replaced = re.findall(r'<rewriting>(.*?)</rewriting>', response, re.DOTALL)
     if group_replaced == []:
         logger.warning(f"Regex error. Return the full response. Response={response}")
         text_rewriting = response
@@ -495,6 +477,71 @@ def node_rewriter(state: AgentState) -> ty.Dict:
     return {
         "suggestion_response": text_rewriting
     }
+
+
+def node_reviewer(state: AgentState) -> ty.Dict:
+    """Node: Reviewer"""
+    logging.info("--- Node: Reviewer ---")
+
+    # do nothing if `is_processor_success` is False
+    if not state["is_processor_success"]:
+        return {}
+    # end if
+    
+    chat = [
+        {
+            "role": "system", 
+            "content": 'You are a "Memory Coach" for a language learner. Your goal is to analyze the user CURRENT MISTAKES and compare them against their ERROR HISTORY.'
+        },
+        {
+            "role": "user",
+            "content": (
+                "1. **Current Mistakes:** A list of errors found in the user's latest diary entry.\n"
+                "2. **Error History:** A list of similar errors the user made in the past (retrieved from database). \n"
+                "### INSTRUCTIONS\n"
+                'Step 1: Compare the "Current Mistakes" with the "Error History".\n'
+                'Step 2: Classify the situation into one of two categories:\n'
+                '   - **"RECURRING"**: The user made a mistake similar to one in history (e.g., gender agreement again, same vocabulary word).\n'
+                '   - **"NEW"**: These are fresh mistakes not seen in the provided history.\n'
+                'Step 3: Generate a short, helpful message.\n'
+                '   - If RECURRING: Be firm but encouraging. Remind them of the specific rule they forgot.\n'
+                '   - If NEW: Be gentle. Explain the new concept briefly.\n'
+                '   - The user\'s target learning level is {level_rewriting}\n'
+                "IMPORTANT: Return the result ONLY as XML in the following structure:\n"
+                "<review>review contents</review>\n\n"
+                "Current Mistakes: {current_mistakes}\n"
+                "Error History: {error_history}\n"
+                "Vocabularies that user does not know: {unkown_expressions}"
+            )
+        }
+    ]
+
+    template = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
+
+    prompt = PromptTemplate(template=template, input_variables=[])
+    
+    # Chain: Prompt -> LLM
+    chain = prompt | llm_large
+
+    response  = chain.invoke({
+        "current_mistakes": state['new_errors'], 
+        "error_history": state['retrieved_context'], 
+        "level_rewriting": state['level_rewriting'],
+        "unkown_expressions": state['unkown_expressions']
+    })
+
+    group_replaced = re.findall(r'<review>(.*?)</review>', response, re.DOTALL)
+    if group_replaced == []:
+        logger.warning(f"Regex error. Return the full response. Response={response}")
+        text_review = response
+    else:
+        text_review = group_replaced[-1]
+    # end if
+
+    return {
+        "total_review": text_review
+    }
+
 
 
 def node_save_duckdb(state: AgentState):
@@ -552,18 +599,20 @@ def init_graph():
     workflow.add_node("validator", node_validation)
     workflow.add_node("detector", node_language_detect)
     workflow.add_node("retriever", node_retriever)
-    workflow.add_node("processor", node_processor)
+    workflow.add_node("translator", node_translator)
     workflow.add_node("archivist", node_archivist)
     workflow.add_node("rewriter", node_rewriter)
+    workflow.add_node("reviewer", node_reviewer)
     workflow.add_node("db_saver", node_save_duckdb)
 
     workflow.set_entry_point("validator")
     workflow.add_edge("validator", "detector")    
     workflow.add_edge("detector", "retriever")
-    workflow.add_edge("retriever", "processor")
-    workflow.add_edge("processor", "archivist")
+    workflow.add_edge("retriever", "translator")
+    workflow.add_edge("translator", "archivist")
     workflow.add_edge("archivist", "rewriter")
-    workflow.add_edge("rewriter", "db_saver")
+    workflow.add_edge('rewriter', 'reviewer')
+    workflow.add_edge("reviewer", "db_saver")
     workflow.add_edge("db_saver", END)
 
     app_graph = workflow.compile()

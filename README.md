@@ -1,5 +1,42 @@
 # LangDiaryAgentic
 
+This project provides AI language learning assistance.
+
+## Background
+
+Writing diaries is supposed to be an effective methods to learn a language, especially the mid-level to the advanced language learner.
+
+The language learner often encounter troubles in finding expressions and vocabularies that they want to express.
+Looking up correct expressions are time-consuming and painful works.
+This can be one of reasons that language learners give up writing diaries.
+
+## Solution
+
+This project help writing diaries with an expression in the language that the learner is familiar with.
+
+For example, "Je suis [a girl]. J'ai [13 years old]". for french-learner whose native language is English.
+
+# Main features
+
+- AI suggestions of improving the vocabularies and expressions. 
+- Keeping the diary and errors in the past.
+
+
+# Technical description
+
+Agentic LLM system is in charge of translating, grammar checker, and rewriting.
+To reflect user's errors in past, RAG is used to suggest grammatical reviews.
+
+System deployment can be done all locally.
+No concern of security matters.
+
+## Tech Stack
+
+- AIs: LangChain, HuggingFace
+- WepAPI: fastapi, streamlit
+- DBs: ChromaDB, DuckDB
+
+
 
 # Prerequisites
 

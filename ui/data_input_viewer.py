@@ -68,6 +68,9 @@ if st.button("Analyze Entry"):
                         _expression_translation = _expression_obj['expression_translation']
                         st.success(f'[{_expression_unk}] -> {_expression_translation}')
                     # end for
+                    
+                    st.subheader("Review comments")
+                    st.success(result["total_review"])
 
                 with col2:
                     st.subheader("🧠 Memory Context")
@@ -78,7 +81,7 @@ if st.button("Analyze Entry"):
                     # end if
                     if "None" not in result["new_errors"]:
                         st.warning("**New Learning Saved:**\n")
-                        _obj_error_analysis = json.loads(result['new_errors'])
+                        _obj_error_analysis = result['new_errors']
                         for _entry in _obj_error_analysis:
                             _document_output = ""
                             _document_output += f"Error-category: {_entry['category']}\n\n"
