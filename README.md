@@ -41,9 +41,74 @@ HF_TOKEN='[your_huggingface_token_here]'
 # HF_HOME='/abs/path/to/large/storage'
 ```
 
+# System Architecture
+
+
+```mermaid
+graph TD
+    %% 1. The User Interface Layer
+    subgraph "Frontend (Streamlit)"
+        UI_Input[User Input: Mixed-Lang Draft]
+        UI_Output[Display: Corrected Text + Personalized Tips]
+    end
+
+    %% 2. DBs
+    subgraph "Memory (Chroma Vector DB)"
+        VDB[(Error Embeddings)]
+    end
+    subgraph "DuckDB"
+        DDB[(Diary DB)]
+    end
+    
+    %% 3. The Agentic Pipeline (LangGraph)
+    subgraph "Agentic Pipeline (LangGraph)"
+        
+        %% Step 1: Analyze & Retrieve
+        Node_Retriever[<b>Node 1: Context Retriever</b><br/>Analyze draft topic<br/>Fetch relevant past errors]
+        
+        %% Step 2: Augment & Generate
+        Node_Processor[<b>Node 2: Augmented Coach</b><br/>Inputs: Draft + <i>Retrieved History</i><br/>Action: Translate & Correct]
+        
+        %% Step 3: Extract & Store
+        Node_Archivist[<b>Node 3: Archivist</b><br/>Identify <i>new</i> errors<br/>Format for storage]
+    end
+
+    %% The Flow
+    UI_Input -->|1. Send Draft| Node_Retriever
+    
+    %% The RAG Loop (The Critical Part)
+    Node_Retriever -->|"2. Query (e.g., 'Gender errors')"| VDB
+    VDB -->|"3. Return Context (e.g., 'User struggles with household items')"| Node_Retriever
+    
+    Node_Archivist -->DDB
+    
+    Node_Retriever -->|4. Pass State: Draft + <b>Context</b>| Node_Processor
+    
+    %% Processing
+    Node_Processor -->|5. Pass Corrected Text| Node_Archivist
+    
+    %% Closing the Loops
+    Node_Archivist -->|6. Save New Errors| VDB
+    Node_Archivist -->|7. Final Response| UI_Output
+
+    %% Styling
+    style Node_Processor fill:#f9f,stroke:#333,stroke-width:2px,color:black
+    style VDB fill:#bbf,stroke:#333,stroke-width:2px,color:black
+```
+
+
 
 # Web App
 
+A Web GUI to write the diary entries.
+
 ```
-streamlit run ui/main.py
+streamlit run ui/data_input_viewer.py
 ```
+
+A Web GUI to view the diary entries.
+
+```
+streamlit run ui/data_viewer.py
+```
+
