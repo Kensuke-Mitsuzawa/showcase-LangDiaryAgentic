@@ -7,16 +7,17 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 
 from .models.vector_store_entry import ErrorRecord
-from .configs import ErrorVectorDB_PATH
+from .configs import ErrorVectorDB_PATH, MODEL_NAME_Embedding
 
 logger = logging.getLogger(__name__)
+
+
+embedding_function = HuggingFaceEmbeddings(model_name=MODEL_NAME_Embedding)
 
 
 def get_vector_store():
     # Uses a free, local model (runs fast on CPU)
     # 'all-MiniLM-L6-v2' is the industry standard for lightweight embeddings
-    embedding_function = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    
     vector_store = Chroma(
         persist_directory=ErrorVectorDB_PATH,
         embedding_function=embedding_function,
@@ -73,12 +74,13 @@ def add_error_logs(records: List[ErrorRecord]):
             "example_phrase": record.example_phrase,
             "primary_id_DiaryEntry": record.primary_id_DiaryEntry,
             "language_diary_text": record.language_diary_text,
-            "language_annotation_text": record.language_annotation_text
+            "language_annotation_text": record.language_annotation_text,\
+            "model_id_embedding": record.model_id_embedding
         })
     # end for
     
     # 3. Batch Insert (One call to the DB)
-    logger.info(f"   💾 Saving {len(batch_texts)} errors to ChromaDB...")
+    logger.info(f"💾 Saving {len(batch_texts)} errors to ChromaDB...")
     db.add_texts(
         texts=batch_texts,
         metadatas=batch_metadatas
@@ -92,14 +94,16 @@ def add_error_logs(records: List[ErrorRecord]):
 
 def query_past_errors(query_text: str,
                       lang_annotation: str,
-                      lang_diary_body: str, 
+                      lang_diary_body: str,
+                      model_id_embedding: str, 
                       k: int = 3):
     db = get_vector_store()
     
     filter_dict={
         "$and": [
             {"language_annotation_text": {"$eq": lang_annotation}},
-            {"language_diary_text": {"$eq": lang_diary_body}}
+            {"language_diary_text": {"$eq": lang_diary_body}},
+            {"model_id_embedding": {"$eq": model_id_embedding}}
         ]
     }
     results = db.similarity_search(query_text, filter=filter_dict, k=k)

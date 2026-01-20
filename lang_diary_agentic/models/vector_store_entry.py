@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Literal, Any
-from ..configs import languages_code
+from ..configs import Languages_Code
 
 
 class ErrorRecord(BaseModel):
@@ -9,6 +9,8 @@ class ErrorRecord(BaseModel):
         description="field `primary_id` of the DiaryEntry."
     )
     
+    model_id_embedding: str = Field(description="LLM name used for the embedding.")
+
     language_diary_text: str = Field(description="the language used to write the diary.")
     
     language_annotation_text: str = Field(description="the language used to write the annotation.")
@@ -36,5 +38,5 @@ class ErrorRecord(BaseModel):
     
     def model_post_init(self, __context: Any) -> None:
         # manipulation on fields
-        assert self.language_annotation_text in languages_code, f"The language code {self.language_annotation_text} is not valid. Check the language code in 2 character."
-        assert self.language_diary_text in languages_code, f"The language code {self.language_diary_text} is not valid. Check the language code in 2 character."
+        assert self.language_annotation_text in Languages_Code, f"The language code {self.language_annotation_text} is not valid. Check the language code in 2 character."
+        assert self.language_diary_text in Languages_Code, f"The language code {self.language_diary_text} is not valid. Check the language code in 2 character."

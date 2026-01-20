@@ -1,7 +1,7 @@
 from pathlib import Path
 import streamlit as st
 import sys
-import os
+import logging
 import json
 
 # Ensure we can import modules from 'app'
@@ -11,12 +11,16 @@ sys.path.append(str(project_root))
 from lang_diary_agentic.graph import init_graph
 
 
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger()
+
+
 app_graph = init_graph()
 
 st.set_page_config(page_title="LinguaLog Local", layout="wide")
 
-st.title("📘 LinguaLog (Local LLM)")
-st.caption("Running locally with Microsoft Phi-3 and ChromaDB")
+st.title("📘 LinguaLog")
+st.caption("Your personal diary-writing tutor for the language learning.")
 
 with st.sidebar:
     st.header("How it works")
@@ -27,7 +31,10 @@ with st.sidebar:
     4. **Archivist** saves new errors to memory.
     """)
 
+
+
 user_input = st.text_area("Write your diary entry:", height=150, placeholder="Example: Je m’appelle Jessica. Je suis une [girl], je suis française et j’ai [13 years old]. Je vais à l’école à Nice, mais j’habite à Cagnes-Sur-Mer. J’ai deux [brothers].")
+st.caption("Example Text: Je me appelle Jessica. Je suis [a girl], je suis français et je avoir [13 years old].")
 lang_diary_body = st.text_input("The language that you write the diary entry.", placeholder="Language code. Example: fr")
 lang_annotation = st.text_input("The language that you use for the annotation [LANG].", placeholder="Language code. Example: en")
 

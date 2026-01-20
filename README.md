@@ -100,6 +100,16 @@ graph TD
 
 # Web App
 
+## LLM
+
+With the server mode,
+
+```
+uvicorn server:app --host 0.0.0.0 --port 8000
+```
+
+## Launching Web App
+
 A Web GUI to write the diary entries.
 
 ```
