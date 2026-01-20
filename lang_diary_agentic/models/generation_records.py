@@ -24,6 +24,7 @@ class DiaryEntry(BaseModel):
 
 class UnknownExpressionEntry(BaseModel):
     expression: str
+    expression_translation: str
     language_source: str
     language_annotation: str
     created_at: datetime = Field(default_factory=datetime.now)    

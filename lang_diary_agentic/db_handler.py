@@ -28,6 +28,7 @@ class HandlerDairyDB():
                 primary_id VARCHAR PRIMARY KEY,
                 created_at TIMESTAMP,
                 expression VARCHAR,
+                expression_translation VARCHAR,
                 language_source VARCHAR,
                 language_annotation VARCHAR
             );
@@ -57,7 +58,7 @@ class HandlerDairyDB():
 
         query = """
         INSERT INTO unknown_expressions VALUES (
-            ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?
         )
         """
 
@@ -65,6 +66,7 @@ class HandlerDairyDB():
             entry_unknown.primary_id, # primary_id
             entry_unknown.created_at, # created_at
             entry_unknown.expression, # expression
+            entry_unknown.expression_translation,
             entry_unknown.language_source, # language_source
             entry_unknown.language_annotation # language_annotation
         ))

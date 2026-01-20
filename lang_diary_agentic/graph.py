@@ -29,6 +29,8 @@ from .configs import (
     Mode_Deployment,
 )
 
+PossibleLevelRewriting = ty.Literal['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+
 apply_logging_suppressions()
 
 logger = logging.getLogger(__name__)
@@ -39,12 +41,13 @@ class AgentState(TypedDict):
     draft_text: str
     retrieved_context: str
     final_response: str
-    suggestion: str  # will be deleted.
+    suggestion_response: str
     new_errors: str
-    bracket_text: ty.List[str]
+    unkown_expressions: ty.List[ty.Dict[str, str]]
     # meta-information
     lang_annotation: ty.Optional[str]  # e.g., "fr"
-    lang_diary_body: ty.Optional[str]  # e.g., "en"    
+    lang_diary_body: ty.Optional[str]  # e.g., "en"
+    level_rewriting: str    
     primary_id_DiaryEntry: str
     diary_date: str
     created_at: datetime
@@ -106,7 +109,9 @@ def server_llm() -> CustomHFServerLLM:
 
 
 if Mode_Deployment == "server":
+    logger.info(f"connecting to the API endpoint: {Server_API_Endpoint}")
     llm_large = server_llm()
+    logger.info(f"API is ready.")
 elif Mode_Deployment == "local":
     llm_large = load_local_llm(MODEL_NAME_Primary, max_tokens=600)
 else:
@@ -119,6 +124,11 @@ tokenizer = load_tokenizer(MODEL_NAME_Primary)
 
 # --- Define Nodes ---
 
+def node_validation(state: AgentState):
+    level_rewriting = state.get("level_rewriting")
+    assert level_rewriting is not None
+    assert level_rewriting in ty.get_args(PossibleLevelRewriting)
+    
 
 def node_language_detect(state: AgentState):
     """
@@ -141,7 +151,7 @@ def node_language_detect(state: AgentState):
         return {
             "lang_annotation": _language_annotation,
             "lang_diary_body": _language_diary,
-            "bracket_text": seq_text_blanket
+            "unkown_expressions": seq_text_blanket
         }
     # end if
 
@@ -158,7 +168,6 @@ def node_language_detect(state: AgentState):
     return {
         "lang_diary_body": language_target,
         "lang_annotation": language_annotation,
-        "bracket_text": seq_text_blanket
     }
     
 
@@ -178,6 +187,45 @@ def node_retriever(state: AgentState) -> ty.Dict:
     context_str = "\n".join([f"- {err}" for err in past_errors]) if past_errors else "None"
     return {"retrieved_context": context_str}
 
+
+
+def __extract_xml_errors_node_processor(text: str, is_skip_1st_error_tag: bool = True):
+    """
+    Parses multiple <error> blocks from the text.
+    Returns a list of dicts: [{'rule': '...', 'phrase': '...', ...}, {...}]
+    """
+    errors = []
+    
+    no_errors_tag = re.findall(r"<no_errors/>", text, re.DOTALL)
+    if len(no_errors_tag) > 1:
+        return []
+    # end if
+
+    # 1. Find all content inside <error>...</error> tags
+    # re.DOTALL allows the dot (.) to match newlines
+    seq_translations = re.findall(r'<translations>(.*?)</translations>', text, re.DOTALL)
+
+    if is_skip_1st_error_tag and len(seq_translations) == 1:
+        return []
+    # end if
+    
+    for _i_block, block in enumerate(seq_translations):
+        if _i_block == 0 and is_skip_1st_error_tag:
+            continue
+        # end if
+
+        # 2. Extract fields from within each block
+        _exp_original = re.search(r"<bracket>(.*?)</bracket>", block, re.DOTALL)
+        _exp_translation = re.search(r"<translation>(.*?)</translation>", block, re.DOTALL)
+        
+        # Only add if we found the critical fields
+        if _exp_original and _exp_translation:
+            errors.append({
+                "expression_original": _exp_original.group(1).strip(),
+                "expression_translation": _exp_translation.group(1).strip() if _exp_translation else "",
+            })
+            
+    return errors
 
 def node_processor(state: AgentState) -> ty.Dict:
     """Node 2: Coach"""
@@ -200,6 +248,10 @@ def node_processor(state: AgentState) -> ty.Dict:
 
     json_schema = """
         "<replaced>translated draft</replaced>"
+        "<translations>\n"
+        "   <bracket>bracketed [text]</bracket>"
+        "   <translation>corresponding translation</translation>"        
+        "</translations>"
         }"""
 
     user_content = (
@@ -232,9 +284,12 @@ def node_processor(state: AgentState) -> ty.Dict:
         "lang_annotation": lang_annotation,
         "json_schema": json_schema
     })
-    
+
     # Simple cleanup to remove the prompt from the output if the model echos it
     clean_response = response.split("<|assistant|>")[-1]
+
+    seq_translations = __extract_xml_errors_node_processor(clean_response)
+
 
     group_replaced = re.findall(r'<replaced>(.+)</replaced>', clean_response)
     if group_replaced == []:
@@ -243,17 +298,19 @@ def node_processor(state: AgentState) -> ty.Dict:
         is_processor_success = False
     else:
         final_response = group_replaced[-1]
+        final_response = final_response.replace('[', '').replace(']', '')
     # end if
 
     logger.debug(f"Correction: {final_response}")
     return {
         "final_response": final_response,
-        "is_processor_success": is_processor_success
+        "is_processor_success": is_processor_success,
+        "unkown_expressions": seq_translations
     }
 
 
 
-def __extract_xml_errors(text: str, is_skip_1st_error_tag: bool = True):
+def __extract_xml_errors_node_archivist(text: str, is_skip_1st_error_tag: bool = True):
     """
     Parses multiple <error> blocks from the text.
     Returns a list of dicts: [{'rule': '...', 'phrase': '...', ...}, {...}]
@@ -268,7 +325,11 @@ def __extract_xml_errors(text: str, is_skip_1st_error_tag: bool = True):
     # 1. Find all content inside <error>...</error> tags
     # re.DOTALL allows the dot (.) to match newlines
     error_blocks = re.findall(r"<error>(.*?)</error>", text, re.DOTALL)
-    
+    if is_skip_1st_error_tag and len(error_blocks)== 1:
+        return []
+    # end if
+
+
     for _i_error, block in enumerate(error_blocks):
         if _i_error == 0 and is_skip_1st_error_tag:
             continue
@@ -290,6 +351,7 @@ def __extract_xml_errors(text: str, is_skip_1st_error_tag: bool = True):
             })
             
     return errors
+
 
 def node_archivist(state: AgentState) -> ty.Dict:
     """Node 3: Archivist"""
@@ -338,7 +400,7 @@ def node_archivist(state: AgentState) -> ty.Dict:
     response  = chain.invoke({})
 
     # 4. Extract List using Regex
-    error_list = __extract_xml_errors(response)
+    error_list = __extract_xml_errors_node_archivist(response)
     
     # 5. Save to DB (Loop through found errors)
     error_list_obj = []
@@ -372,6 +434,69 @@ def node_archivist(state: AgentState) -> ty.Dict:
     }
 
 
+
+def node_rewriter(state: AgentState) -> ty.Dict:
+    """Node: Rewritting"""
+    logging.info("--- Node: Rewriting ---")
+
+    # set the meta-info first
+    diary_date = state.get("date_diary", str(date.today()))
+    created_at = datetime.now()
+    datetime_str = created_at.isoformat()
+    primary_id_DiaryEntry = f"{diary_date}_{datetime_str}"
+
+    # do nothing if `is_processor_success` is False
+    if not state["is_processor_success"]:
+        return {
+        "primary_id_DiaryEntry": primary_id_DiaryEntry,
+        "diary_date": diary_date,
+        "created_at": created_at
+    }
+    # end if
+    
+    chat = [
+        {
+            "role": "user", 
+            "content": (
+                "You are an expert language=`{target_lang}` editor. Rewrite the following text to be Advanced ({level_rewriting} Level).\n"
+                "Rules:\n"
+                "1. Translate `[bracketed language=`{source_lang}` text]` to contextually correct language=`{target_lang}`.\n"
+                "2. Upgrade vocabulary to be more sophisticated.\n"
+                "3. Fix all grammar errors.\n"
+                "IMPORTANT: Return the result ONLY as XML in the following structure:\n"
+                "<rewriting>rewritten text</rewriting>\n\n"
+                "Input: `{user_text}`"
+            )
+        }
+    ]
+
+    template = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
+
+    prompt = PromptTemplate(template=template, input_variables=[])
+    
+    # Chain: Prompt -> LLM
+    chain = prompt | llm_large
+    response  = chain.invoke({
+        "user_text": state['final_response'], 
+        "target_lang": state['lang_diary_body'], 
+        "source_lang": state['lang_annotation'],
+        "level_rewriting": state['level_rewriting']
+    })
+
+    group_replaced = re.findall(r'<rewriting>(.+)</rewriting>', response)
+    if group_replaced == []:
+        logger.warning(f"Regex error. Return the full response. Response={response}")
+        text_rewriting = response
+    else:
+        text_rewriting = group_replaced[-1]
+        text_rewriting = text_rewriting.replace('[', '').replace(']', '')
+    # end if
+
+    return {
+        "suggestion_response": text_rewriting
+    }
+
+
 def node_save_duckdb(state: AgentState):
     """New Node: Save everything to DuckDB"""
     logger.info("--- [4] Saving to DuckDB ---")
@@ -392,16 +517,17 @@ def node_save_duckdb(state: AgentState):
         language_annotation=language_annotation,
         diary_original=state["draft_text"],
         diary_replaced=state["final_response"],
-        diary_corrected="",
+        diary_corrected=state["suggestion_response"],
         created_at=created_at,
         primary_id=state["primary_id_DiaryEntry"]
     )
 
     seq_unknown_expression_entry = []
-    seq_bracket_text = state['bracket_text']
-    for _expression in seq_bracket_text:
+    seq_bracket_text = state['unkown_expressions']
+    for _d_expression in seq_bracket_text:
         _unknown_expression_entry = UnknownExpressionEntry(
-            expression=_expression,
+            expression=_d_expression['expression_original'],
+            expression_translation=_d_expression['expression_translation'],
             language_source=language_source,
             language_annotation=language_annotation,
             created_at=created_at,
@@ -423,17 +549,21 @@ def node_save_duckdb(state: AgentState):
 def init_graph():
     # --- 4. Build Graph ---
     workflow = StateGraph(AgentState)
+    workflow.add_node("validator", node_validation)
     workflow.add_node("detector", node_language_detect)
     workflow.add_node("retriever", node_retriever)
     workflow.add_node("processor", node_processor)
     workflow.add_node("archivist", node_archivist)
+    workflow.add_node("rewriter", node_rewriter)
     workflow.add_node("db_saver", node_save_duckdb)
 
-    workflow.set_entry_point("detector")
+    workflow.set_entry_point("validator")
+    workflow.add_edge("validator", "detector")    
     workflow.add_edge("detector", "retriever")
     workflow.add_edge("retriever", "processor")
     workflow.add_edge("processor", "archivist")
-    workflow.add_edge("archivist", "db_saver") 
+    workflow.add_edge("archivist", "rewriter")
+    workflow.add_edge("rewriter", "db_saver")
     workflow.add_edge("db_saver", END)
 
     app_graph = workflow.compile()
