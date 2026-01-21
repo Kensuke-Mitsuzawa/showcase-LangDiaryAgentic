@@ -1,92 +1,30 @@
-# LangDiaryAgentic
+LangDiary: Agentic RAG Platform for Mixed-Language Learning
+An offline-first, privacy-preserving AI pipeline enabling "Code-Switching" for language acquisition.
 
-This project provides AI language learning assistance.
+<div align="center"> <a href="https://kensuke-mitsuzawa.github.io/portfolio/LangDiaryAgentic.mp4"> <img src="https://private-user-images.githubusercontent.com/1772712/538293801-8148441b-be67-4b2f-a8ae-1d3d8f31e1ac.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3Njg5NTU2ODUsIm5iZiI6MTc2ODk1NTM4NSwicGF0aCI6Ii8xNzcyNzEyLzUzODI5MzgwMS04MTQ4NDQxYi1iZTY3LTRiMmYtYThhZS0xZDNkOGYzMWUxYWMucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI2MDEyMSUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNjAxMjFUMDAyOTQ1WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9NjA1YThhNjAyOGQ5MjQ5MzA4YzkzZGJlYzZjOWQzNTFmODU3MzFjYTE4NzQ3MjQxMTc4MjMyZDQ5YWM1YzE1ZSZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QifQ.E-41PqJkcozbSIFflRGzUFK4yeXzBszK7_FEcXs3sys" alt="Watch the Demo" width="800"/> </a> <p><em>Click the image to watch the full architecture demo.</em></p> </div>
 
-[![Watch the Demo](https://private-user-images.githubusercontent.com/1772712/538293801-8148441b-be67-4b2f-a8ae-1d3d8f31e1ac.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3Njg5NTU2ODUsIm5iZiI6MTc2ODk1NTM4NSwicGF0aCI6Ii8xNzcyNzEyLzUzODI5MzgwMS04MTQ4NDQxYi1iZTY3LTRiMmYtYThhZS0xZDNkOGYzMWUxYWMucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI2MDEyMSUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNjAxMjFUMDAyOTQ1WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9NjA1YThhNjAyOGQ5MjQ5MzA4YzkzZGJlYzZjOWQzNTFmODU3MzFjYTE4NzQ3MjQxMTc4MjMyZDQ5YWM1YzE1ZSZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QifQ.E-41PqJkcozbSIFflRGzUFK4yeXzBszK7_FEcXs3sys)](https://kensuke-mitsuzawa.github.io/portfolio/LangDiaryAgentic.mp4)
+---
 
+# 🚀 The Engineering Challenge
+Intermediate language learners often hit a plateau where they cannot express complex thoughts in their target language, leading to frustration and abandonment of practice. Traditional tools (DeepL, ChatGPT) offer simple translation but lack contextual awareness of the user's past mistakes.
 
-## Background
-
-Writing diaries is supposed to be an effective methods to learn a language, especially the mid-level to the advanced language learner.
-
-The language learner often encounter troubles in finding expressions and vocabularies that they want to express.
-Looking up correct expressions are time-consuming and painful works.
-This can be one of reasons that language learners give up writing diaries.
-
-## Solution
-
-This project help writing diaries with an expression in the language that the learner is familiar with.
-
-For example, "Je suis [a girl]. J'ai [13 years old]". for french-learner whose native language is English.
-
-# Main features
-
-- AI suggestions of improving the vocabularies and expressions. 
-- Keeping the diary and errors in the past.
+**LangDiary** solves this by engineering a **Code-Switching Interface**. It allows users to write naturally by mixing their native language (L1) into the target language (L2) syntax.
 
 
-# Technical description
+### Example Input (English $\rightarrow$ French):
 
-Agentic LLM system is in charge of translating, grammar checker, and rewriting.
-To reflect user's errors in past, RAG is used to suggest grammatical reviews.
+> "Je suis a girl. J'ai 13 years old."
 
-System deployment can be done all locally.
-No concern of security matters.
+### System Output:
 
-## Tech Stack
+> "Je suis une fille. J'ai 13 ans."
 
-- AIs: LangChain, HuggingFace
-- WepAPI: fastapi, streamlit
-- DBs: ChromaDB, DuckDB
+(Context Retrieved: User previously confused 'être' and 'avoir' for age. System highlights correction.)
 
+# 🏗 System Architecture
 
-
-# Prerequisites
-
-- Python: 3.12+
-- Package Manager: uv
-- Hardware: NVIDIA GPU with CUDA support (Recommended: [e.g., 24GB+] VRAM). Confirmed to work with CUDA 12.9 on 2 V100S-PCIE-32GB GPUs.
-- OS: Linux.
-
-
-# Installation & Setup
-
-```
-1. Environment Setup
-This project uses uv for fast dependency management.
-
-# Install uv if not already installed
-pip install uv
-
-# Sync dependencies and create virtual environment (default: .venv)
-uv sync
-
-# Activate the environment
-source .venv/bin/activate
-```
-
-##  API Keys & LLM Access
-
-These descriptions below are applied in the followig cases,
-1. want to use the LLMs that requires the accepting "terms" on the HuggingFace (such as Mistral or Llama),
-2. want to change the storage path where the `transformers` package saves the model file.
-
-
-Create an Access Token (Read permission) in your HF settings. Create a .env file in the project root:
-
-```
-HF_TOKEN='[your_huggingface_token_here]'
-
-# Optional: Custom model cache location (default is ~/.cache)
-# HF_HOME='/abs/path/to/large/storage'
-```
-
-## Configuration
-
-The app configurations are found at `lang_diary_agentic/configs.py`.
-
-
-# System Architecture
+This project moves beyond simple LLM wrapping by implementing a Multi-Agent RAG Pipeline using **LangGraph**. 
+The system is designed for local deployment on consumer-grade GPUs, ensuring total data privacy.
 
 
 ```mermaid
@@ -173,48 +111,96 @@ Node_Reviewer -->|7. Final Response| UI_Output
 style VDB fill:#bbf,stroke:#333,stroke-width:2px,color:black
 ```
 
+## Key Technical Features
+- Agentic State Machine: Uses LangGraph to orchestrate a 5-step loop (Retrieve $\to$ Translate $\to$ Archive $\to$ Rewrite $\to$ Review), ensuring higher accuracy than zero-shot prompting.
+- Hybrid Memory Architecture:
+    - Short-term: Context window management.
+    - Long-term: ChromaDB stores embeddings of specific user error patterns (e.g., gender mismatches, wrong prepositions).
+    - Analytical: DuckDB enables fast SQL querying of diary metadata.
+- Privacy-First: Fully compatible with local weights (Mistral, Llama 3) via HuggingFace transformers.
 
-# Deployments
+# 🛠 Tech Stack
 
-## LLM service
+| Layer | Technology | Reason for Choice |
+| ----- | ---------- | ----------------- |
+| Orchestration | LangChain / LangGraph | For building cyclic graph-based agent workflows. |
+| LLM Backend | HuggingFace Transformers | To run open-weights models locally without API costs.|
+| API Layer | FastAPI | High-performance async backend. |
+| Frontend | Streamlit | Rapid prototyping of interactive data/chat interfaces.|
+| Vector Store | ChromaDB | Lightweight, local vector search for RAG.|
+|Analytics DB | DuckDB | In-process SQL OLAP for diary analysis. |
+| Package Mgmt | uv | Extremely fast Python dependency management (Rust-based). |
 
-There are two choices: `local` or `server`.
-Please switch the mode at `lang_diary_agentic/configs.py`.
 
-### Local mode
+# ⚡ Installation & Setup
 
-Nothing special configuration is necessary.
-Yet, the local machine must be equipped with GPUs.
+## Prerequisites
 
-### Server mode
+- OS: Linux (Recommended)
+- Python: 3.12+
+- Hardware: NVIDIA GPU (Recommended: 24GB+ VRAM for comfortable local inference). Verified on: 2x NVIDIA V100S (32GB).
+- Package Manager: uv (for fast setup).
 
-1. `git clone` this project on the machine equipped with GPU devices.
-2. setting up this project using `nv` command.
-3. launching the API service with the following command,
+## 1. Environment Setup
+
+This project uses `uv` for modern, reliable dependency management.
 
 ```
-# suppose at `./servers/
+# Install uv (if not installed)
+pip install uv
+
+# Sync dependencies and create virtual environment
+uv sync
+
+# Activate the environment
+source .venv/bin/activate
+```
+
+## 2. API Keys & Configuration
+
+If using gated models (e.g., Llama 3) or custom cache paths, configure your `.env` file:
+
+```
+# .env
+HF_TOKEN='your_huggingface_read_token'
+
+# Optional: Custom model cache location
+# HF_HOME='/path/to/large/storage'
+```
+
+System configurations (Model selection, GPU allocation) can be tuned in: `lang_diary_agentic/configs.py`
+
+# 🚀 Deployment
+
+The system supports dual-mode deployment via `configs.py`.
+
+
+## A. Local Mode (Standalone)
+
+Ideal for single-user privacy. No complex setup required other than GPU drivers.
+
+## B. Server Mode (API)
+
+Decouples the heavy inference engine from the UI.
+
+### Launch the Inference API:
+
+```
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
-
-## Web App
-
-### Configurations
-
-Check the configurations `lang_diary_agentic/configs.py`.
-
-### Web App service
-
-A Web GUI to write the diary entries.
-
+#### Launch the Frontend Interfaces:
+ 
 ```
+# For writing diaries
 streamlit run ui/data_input_viewer.py
-```
 
-A Web GUI to view the diary entries.
-
-```
+# For reviewing analytics
 streamlit run ui/data_viewer.py
 ```
+
+# 🛡 Security Note
+
+This architecture allows for 100% data sovereignty. 
+When running in Local Mode, no diary entries or user data ever leave the machine, making it suitable for sensitive personal journals or enterprise training environments.
 
