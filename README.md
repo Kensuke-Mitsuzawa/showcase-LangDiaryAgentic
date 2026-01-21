@@ -173,6 +173,7 @@ System configurations (Model selection, GPU allocation) can be tuned in: `lang_d
 # 🚀 Deployment
 
 The system supports dual-mode deployment via `configs.py`.
+Please jump to "Deployment with Docker" when you prefer to use the docker container.
 
 
 ## A. Local Mode (Standalone)
@@ -189,7 +190,7 @@ Decouples the heavy inference engine from the UI.
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
-#### Launch the Frontend Interfaces:
+## Launch the Frontend Interfaces:
  
 ```
 # For writing diaries
@@ -198,6 +199,35 @@ streamlit run ui/data_input_viewer.py
 # For reviewing analytics
 streamlit run ui/data_viewer.py
 ```
+
+## 🚀 Deployment with Docker
+
+The LLM server container is launched with the command (i.e. on the GPU server),
+
+#### Container on server
+
+```bash
+docker-compose --profile server up --build
+```
+
+#### Container on client
+
+Please edit the `.env` (create it if not exists).
+The file is 
+
+```
+SERVER_API_URL="http://0.0.0.0:8000"
+```
+
+
+The client web app is launched with command (i.e. on the laptop).
+
+
+```bash
+docker-compose --profile client up --build
+```
+
+
 
 # 🛡 Security Note
 
