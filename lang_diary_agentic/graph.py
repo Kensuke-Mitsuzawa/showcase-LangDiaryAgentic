@@ -9,6 +9,8 @@ import typing as ty
 from typing import TypedDict
 from langchain_community.llms import HuggingFacePipeline
 from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import StateGraph, END
 from langchain_core.language_models import BaseLanguageModel
@@ -156,21 +158,64 @@ def cloud_llm(
         raise ValueError(f"Unsupported provider: {provider}")
 
 
-if settings.Mode_Deployment == "server":
+tokenizer: ty.Optional[PreTrainedTokenizer]
+if settings.Mode_Deployment == "cloud_api":
+    assert settings.Cloud_API_Token is not None
+    llm_large = cloud_llm(api_key=settings.Cloud_API_Token, model_name=settings.MODEL_NAME_Primary)
+    tokenizer = None
+elif settings.Mode_Deployment == "server":
     logger.info(f"connecting to the API endpoint: {settings.Server_API_Endpoint}")
     llm_large = server_llm()
+    tokenizer = load_tokenizer(settings.MODEL_NAME_Primary)
     logger.info(f"API is ready.")
-elif settings.Mode_Deployment == "cloud_api":
-    assert settings.Cloud_API_Token is not None
-    llm_large = cloud_llm(api_key=settings.Cloud_API_Token)
 elif settings.Mode_Deployment == "local":
     llm_large = load_local_llm(settings.MODEL_NAME_Primary, max_tokens=600)
+    tokenizer = load_tokenizer(settings.MODEL_NAME_Primary)
 else:
     raise ValueError(f"Invalid Mode_Deployment: {settings.Mode_Deployment}")
 # end if
-tokenizer = load_tokenizer(settings.MODEL_NAME_Primary)
+
 
 # ---- END: API-setups ----
+
+
+def format_chat_template(chat: ty.List[ty.Dict[str, str]]) -> str | ty.List[ty.Dict]:
+    if tokenizer is not None:
+        template = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
+    else:
+        template = chat
+    # end if
+    return template
+
+
+def create_compatible_chain(formatted_input: str | ty.List[ty.Dict], llm):
+    """
+    Dynamically builds the chain based on whether input is String or List.
+    """
+    if isinstance(formatted_input, str):
+        # 1. Local Model Path (String Input)
+        prompt = PromptTemplate(
+            template=formatted_input,
+            input_variables=[])
+    else:
+        # 2. API Path (List Input)
+        # We must convert dicts -> LangChain Message Objects
+        messages = []
+        for msg in formatted_input:
+            if msg['role'] == 'user':
+                messages.append(HumanMessage(content=msg['content']))
+            elif msg['role'] == 'system':
+                messages.append(SystemMessage(content=msg['content']))
+            elif msg['role'] == 'assistant':
+                messages.append(AIMessage(content=msg['content']))
+        
+        # Create a ChatPromptTemplate from these messages
+        prompt = ChatPromptTemplate.from_messages(messages)
+
+    # 3. Build and return the chain
+    # Note: We invoke with empty dict {} because the prompt is already fully populated
+    chain = prompt | llm | StrOutputParser()
+    return chain
 
 
 # --- Define Nodes ---
@@ -281,6 +326,7 @@ def __extract_xml_errors_node_processor(text: str, is_skip_1st_error_tag: bool =
     # end for
     return errors
 
+
 def node_translator(state: AgentState) -> ty.Dict:
     """Node 2: Coach"""
     logging.info("--- Node: translator ---")
@@ -317,22 +363,20 @@ def node_translator(state: AgentState) -> ty.Dict:
         {"role": "user", "content": user_content},
     ]
 
-    template = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
-
-    prompt = PromptTemplate(
-        template=template,
-        input_variables=[]
-    )
-    
-    chain = prompt | llm_large | StrOutputParser()
-    
+    template = format_chat_template(chat)
+    # prompt = PromptTemplate(
+    #     template=template,
+    #     input_variables=[]
+    # )    
+    # chain = prompt | llm_large | StrOutputParser()
+    # breakpoint()
+    chain = create_compatible_chain(template, llm_large)
     response = chain.invoke({
-        "unkown_expressions": state['unkown_expressions'], 
+        "unkown_expressions": json.dumps(state['unkown_expressions']), 
         "sub_phrase_language_pair": sub_phrase_language_pair,
         "lang_annotation": lang_annotation,
         "xml_schema": xml_schema
     })
-
     # Simple cleanup to remove the prompt from the output if the model echos it
     clean_response = response.split("<|assistant|>")[-1]
 
@@ -434,12 +478,12 @@ def node_archivist(state: AgentState) -> ty.Dict:
         }
     ]
 
-    template = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
-
-    prompt = PromptTemplate(template=template, input_variables=[])
-    
-    # Chain: Prompt -> LLM
-    chain = prompt | llm_large
+    # template = format_chat_template(chat)
+    # prompt = PromptTemplate(template=template, input_variables=[])    
+    # # Chain: Prompt -> LLM
+    # chain = prompt | llm_large
+    template = format_chat_template(chat)
+    chain = chain = create_compatible_chain(template, llm_large)
     response  = chain.invoke({})
 
     # 4. Extract List using Regex
@@ -501,12 +545,12 @@ def node_rewriter(state: AgentState) -> ty.Dict:
         }
     ]
 
-    template = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
+    # template = format_chat_template(chat)
+    # prompt = PromptTemplate(template=template, input_variables=[])
+    # # Chain: Prompt -> LLM
+    # chain = prompt | llm_large
 
-    prompt = PromptTemplate(template=template, input_variables=[])
-    
-    # Chain: Prompt -> LLM
-    chain = prompt | llm_large
+    chain = create_compatible_chain(chat, llm_large)
     response  = chain.invoke({
         "user_text": state['final_response'], 
         "target_lang": state['lang_diary_body'], 
@@ -565,12 +609,12 @@ def node_reviewer(state: AgentState) -> ty.Dict:
         }
     ]
 
-    template = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
-
-    prompt = PromptTemplate(template=template, input_variables=[])
-    
-    # Chain: Prompt -> LLM
-    chain = prompt | llm_large
+    # template = format_chat_template(chat)
+    # prompt = PromptTemplate(template=template, input_variables=[])
+    # # Chain: Prompt -> LLM
+    # chain = prompt | llm_large
+    template = format_chat_template(chat)
+    chain = create_compatible_chain(template, llm_large)
 
     response  = chain.invoke({
         "current_mistakes": state['new_errors'], 
