@@ -13,7 +13,7 @@ Intermediate language learners often hit a plateau where they cannot express com
 
 ### Example Input (English $\rightarrow$ French):
 
-> "Je suis a girl. J'ai 13 years old."
+> "Je suis [a girl]. J'ai [13 years old]."
 
 ### System Output:
 
