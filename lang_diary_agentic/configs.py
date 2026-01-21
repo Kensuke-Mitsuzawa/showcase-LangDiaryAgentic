@@ -1,38 +1,47 @@
 from pathlib import Path
 import os
-import pycountry
-import typing
+import logging
+import typing as ty
 
-PossibleChoiceModeDeployment = typing.Literal["local", "server"]
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
-# Save DB in the same 'data' folder
-BASE_DIR = Path(__file__).resolve().parent.parent
-GENERATION_DB_PATH = os.path.join(BASE_DIR, "data", "diary_log.duckdb")
-ErrorVectorDB_PATH = os.path.join(BASE_DIR, "data", "chroma_db")
+from . import static
 
-
-MODEL_NAME_Embedding = "all-MiniLM-L6-v2"
-MODEL_NAME_Primary = "Qwen/Qwen2.5-7B-Instruct" # Or your preferred model
-
-Mode_Deployment: PossibleChoiceModeDeployment = "server"
-
-Server_API_Endpoint: str = "http://0.0.0.0:8000"
+logger = logging.getLogger(__name__)
 
 
-# ---- overwriging the `Server_API_Endpoint` with the env variable ----
-SERVER_API_URL_env_var = os.environ.get('SERVER_API_URL', None)
-if SERVER_API_URL_env_var is not None:
-    Server_API_Endpoint = SERVER_API_URL_env_var
+class Settings(BaseSettings):
+    # Define variables with types and default values
+    APP_NAME: str = "LinguaLog"
+
+    Mode_Deployment: static.PossibleChoiceModeDeployment = "cloud_api"
+    Server_API_Endpoint: ty.Optional[str] = None
+    Cloud_API_Token: ty.Optional[str] = None
+
+    MODEL_NAME_Embedding: str = "all-MiniLM-L6-v2"
+    MODEL_NAME_Primary: str = "Qwen/Qwen2.5-7B-Instruct"
+
+    DB_BASE_DIR: str = Field(default_factory=lambda: Path(__file__).resolve().parent.parent.as_posix())
+    DB_NAME_GENERATION: str = "diary_log.duckdb"
+    DB_NAME_ERROR_VECTOR: str = "chroma_db"
+    GENERATION_DB_PATH: ty.Optional[str] = None
+    ErrorVectorDB_PATH: ty.Optional[str] = None
+
+    # This sub-class tells Pydantic to look for a .env file
+    model_config = SettingsConfigDict(env_file=".env")
+
+    def model_post_init(self, context: ty.Any) -> None:
+        self.GENERATION_DB_PATH = os.path.join(self.DB_BASE_DIR, "data", "diary_log.duckdb")
+        self.ErrorVectorDB_PATH = os.path.join(self.DB_BASE_DIR, "data", "chroma_db")
+
+        if self.Mode_Deployment == 'cloud_api':
+            assert self.Cloud_API_Token is not None
+        elif self.Mode_Deployment == 'server':
+            assert self.Server_API_Endpoint is not None
 # end if
 
 
-# ---- list of language codes ----
-# Iterate through all languages and filter for those that have an alpha_2 code
-Languages_Code = []
-for lang in pycountry.languages:
-    if hasattr(lang, 'alpha_2'):
-        Languages_Code.append(lang.alpha_2)  # type: ignore
-    # end if
-# end for
-assert len(Languages_Code) > 0, "No language codes are loaded."
-# ---- END: list of language codes ----
+# Create a single instance to use across your app
+settings = Settings()
+logger.info(f'loaded settings: {settings}')

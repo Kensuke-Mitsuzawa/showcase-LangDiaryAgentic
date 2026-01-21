@@ -11,6 +11,9 @@ from langchain_community.llms import HuggingFacePipeline
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import StateGraph, END
+from langchain_core.language_models import BaseLanguageModel
+from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer, pipeline
 
@@ -21,16 +24,14 @@ from .vector_store import query_past_errors, add_error_logs
 from .logging_configs import apply_logging_suppressions
 from .models.vector_store_entry import ErrorRecord
 from .db_handler import HandlerDairyDB, UnknownExpressionEntry, DiaryEntry
-from .configs import (
-    GENERATION_DB_PATH, 
-    Languages_Code, 
-    MODEL_NAME_Primary,
-    MODEL_NAME_Embedding, 
-    Server_API_Endpoint, 
-    Mode_Deployment,
+from .static import (
+    Languages_Code,
+    PossibleChoiceModeDeployment,
+    PossibleCloudLLMProvider,
+    PossibleLevelRewriting
 )
+from .configs import settings
 
-PossibleLevelRewriting = ty.Literal['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 
 apply_logging_suppressions()
 
@@ -100,26 +101,74 @@ def load_local_llm(model_id, max_tokens=500) -> HuggingFacePipeline:
 
 def server_llm() -> CustomHFServerLLM:
     """Helper to load a model pipeline"""
-   # Initialize your custom connection
-    llm = CustomHFServerLLM(api_url=Server_API_Endpoint)
+    # Initialize your custom connection
+    assert settings.Server_API_Endpoint is not None
+    llm = CustomHFServerLLM(api_url=settings.Server_API_Endpoint)
     
     if llm.check_connection() is False:
-        raise RuntimeError(f"The server is not available at {Server_API_Endpoint}.")
+        raise RuntimeError(f"The server is not available at {settings.Server_API_Endpoint}.")
     # end if
 
     return llm
 
 
-if Mode_Deployment == "server":
-    logger.info(f"connecting to the API endpoint: {Server_API_Endpoint}")
+def cloud_llm(
+    api_key: str, 
+    model_name: ty.Optional[str] = None,
+    provider: PossibleCloudLLMProvider = "openai", 
+    temperature: float = 0.7
+) -> BaseLanguageModel:
+    """
+    Factory function to return a Cloud-based LLM (OpenAI/Gemini).
+    
+    Args:
+        provider: "openai" or "google"
+        api_key: The secret token (defaults to env vars OPENAI_API_KEY or GOOGLE_API_KEY)
+        model_name: Specific model (e.g. "gpt-4o", "gemini-pro")
+        temperature: Creativity parameter
+    """
+    
+    # 1. OpenAI Implementation
+    if provider.lower() == "openai":
+        # Uses OPENAI_API_KEY environment variable by default if api_key is None
+        llm = ChatOpenAI(
+            api_key=api_key,
+            model=model_name or "gpt-4o",
+            temperature=temperature,
+            max_retries=2,
+            # 'streaming=True' is often preferred for cloud APIs
+            streaming=True 
+        )
+        return llm
+
+    # 2. Google Gemini Implementation
+    elif provider.lower() == "google":
+        # Uses GOOGLE_API_KEY environment variable by default if api_key is None
+        llm = ChatGoogleGenerativeAI(
+            google_api_key=api_key,
+            model=model_name or "gemini-1.5-flash",
+            temperature=temperature,
+            convert_system_message_to_human=True # Helps with older Gemini quirks
+        )
+        return llm
+
+    else:
+        raise ValueError(f"Unsupported provider: {provider}")
+
+
+if settings.Mode_Deployment == "server":
+    logger.info(f"connecting to the API endpoint: {settings.Server_API_Endpoint}")
     llm_large = server_llm()
     logger.info(f"API is ready.")
-elif Mode_Deployment == "local":
-    llm_large = load_local_llm(MODEL_NAME_Primary, max_tokens=600)
+elif settings.Mode_Deployment == "cloud_api":
+    assert settings.Cloud_API_Token is not None
+    llm_large = cloud_llm(api_key=settings.Cloud_API_Token)
+elif settings.Mode_Deployment == "local":
+    llm_large = load_local_llm(settings.MODEL_NAME_Primary, max_tokens=600)
 else:
-    raise ValueError(f"Invalid Mode_Deployment: {Mode_Deployment}")
+    raise ValueError(f"Invalid Mode_Deployment: {settings.Mode_Deployment}")
 # end if
-tokenizer = load_tokenizer(MODEL_NAME_Primary)
+tokenizer = load_tokenizer(settings.MODEL_NAME_Primary)
 
 # ---- END: API-setups ----
 
@@ -185,7 +234,7 @@ def node_retriever(state: AgentState) -> ty.Dict:
         query_text=state["draft_text"], 
         lang_annotation=state["lang_annotation"], 
         lang_diary_body=state["lang_diary_body"],
-        model_id_embedding=MODEL_NAME_Embedding
+        model_id_embedding=settings.MODEL_NAME_Embedding
     )
     context_str = "\n".join([f"- {err}" for err in past_errors]) if past_errors else "None"
     return {"retrieved_context": context_str}
@@ -402,7 +451,7 @@ def node_archivist(state: AgentState) -> ty.Dict:
         err['primary_id_DiaryEntry'] = primary_id_DiaryEntry
         err['language_diary_text'] = state['lang_diary_body']
         err['language_annotation_text'] = state['lang_annotation']
-        err['model_id_embedding'] = MODEL_NAME_Embedding
+        err['model_id_embedding'] = settings.MODEL_NAME_Embedding
         try:
             record = ErrorRecord(**err)
             error_list_obj.append(record)
@@ -582,8 +631,9 @@ def node_save_duckdb(state: AgentState):
         )
         seq_unknown_expression_entry.append(_unknown_expression_entry)
     # end for
-
-    handler = HandlerDairyDB(GENERATION_DB_PATH)
+    
+    assert settings.GENERATION_DB_PATH is not None
+    handler = HandlerDairyDB(settings.GENERATION_DB_PATH)
     handler.init_db()
 
     handler.save_diary_entry(diary_entry)

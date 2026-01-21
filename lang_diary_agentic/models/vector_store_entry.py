@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Literal, Any
-from ..configs import Languages_Code
+from ..static import Languages_Code
 
 
 class ErrorRecord(BaseModel):

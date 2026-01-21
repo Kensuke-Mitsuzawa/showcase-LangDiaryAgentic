@@ -7,45 +7,23 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 
 from .models.vector_store_entry import ErrorRecord
-from .configs import ErrorVectorDB_PATH, MODEL_NAME_Embedding
+from .configs import settings
 
 logger = logging.getLogger(__name__)
 
 
-embedding_function = HuggingFaceEmbeddings(model_name=MODEL_NAME_Embedding)
+embedding_function = HuggingFaceEmbeddings(model_name=settings.MODEL_NAME_Embedding)
 
 
 def get_vector_store():
     # Uses a free, local model (runs fast on CPU)
     # 'all-MiniLM-L6-v2' is the industry standard for lightweight embeddings
     vector_store = Chroma(
-        persist_directory=ErrorVectorDB_PATH,
+        persist_directory=settings.ErrorVectorDB_PATH,
         embedding_function=embedding_function,
         collection_name="lingualog_errors"
     )
     return vector_store
-
-
-# def add_error_log(record: ErrorRecord):
-#     db = get_vector_store()
-    
-#     # 1. Content: Used for similarity search (Embeddings)
-#     # We use the helper we defined in schemas.py
-#     text_content = record.to_string()
-    
-#     # 2. Metadata: specific fields you can filter on later
-#     metadata = {
-#         "category": record.category,
-#         "rule": record.error_rule,
-#         "correction": record.correction
-#     }
-    
-#     # Add to Chroma
-#     db.add_texts(
-#         texts=[text_content],
-#         metadatas=[metadata]
-#     )
-#     db.persist()
 
 
 def add_error_logs(records: List[ErrorRecord]):
