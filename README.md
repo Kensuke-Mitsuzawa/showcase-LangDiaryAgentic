@@ -156,19 +156,12 @@ uv sync
 source .venv/bin/activate
 ```
 
-## 2. API Keys & Configuration
+## 2. Configuration
 
-If using gated models (e.g., Llama 3) or custom cache paths, configure your `.env` file:
+`.env` controls the variables.
 
-```
-# .env
-HF_TOKEN='your_huggingface_read_token'
+Please copy the `env_base` and make `.env`.
 
-# Optional: Custom model cache location
-# HF_HOME='/path/to/large/storage'
-```
-
-System configurations (Model selection, GPU allocation) can be tuned in: `lang_diary_agentic/configs.py`
 
 # 🚀 Deployment
 
@@ -216,7 +209,7 @@ Please edit the `.env` (create it if not exists).
 The file is 
 
 ```
-SERVER_API_URL="http://0.0.0.0:8000"
+Server_API_Endpoint="http://0.0.0.0:8000"
 ```
 
 
