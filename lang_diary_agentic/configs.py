@@ -19,6 +19,13 @@ Mode_Deployment: PossibleChoiceModeDeployment = "server"
 Server_API_Endpoint: str = "http://0.0.0.0:8000"
 
 
+# ---- overwriging the `Server_API_Endpoint` with the env variable ----
+SERVER_API_URL_env_var = os.environ.get('SERVER_API_URL', None)
+if SERVER_API_URL_env_var is not None:
+    Server_API_Endpoint = SERVER_API_URL_env_var
+# end if
+
+
 # ---- list of language codes ----
 # Iterate through all languages and filter for those that have an alpha_2 code
 Languages_Code = []

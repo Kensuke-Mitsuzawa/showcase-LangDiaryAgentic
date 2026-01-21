@@ -1,0 +1,25 @@
+# Exclude the local virtual environment
+.venv/
+venv/
+env/
+data/
+
+# Exclude python byte code
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Exclude local database files (so you don't overwrite your container DB)
+chroma_db/
+*.db
+
+# Exclude environment secrets and git
+.env
+.git/
+.gitignore
+
+# Exclude build artifacts
+build/
+dist/
+*.egg-info/
