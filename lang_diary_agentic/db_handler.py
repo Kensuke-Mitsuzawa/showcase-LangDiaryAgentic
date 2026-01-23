@@ -58,12 +58,13 @@ class HandlerDairyDB():
 
         query = """
         INSERT INTO unknown_expressions VALUES (
-            ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?
         )
         """
 
         conn.execute(query, (
             entry_unknown.primary_id, # primary_id
+            entry_unknown.primary_id_DiaryEntry, # primary_id_DiaryEntry
             entry_unknown.created_at, # created_at
             entry_unknown.expression, # expression
             entry_unknown.expression_translation,
@@ -95,7 +96,7 @@ class HandlerDairyDB():
             entry_diary.language_annotation, # language_annotation
             entry_diary.diary_original, # diary_original
             entry_diary.diary_replaced, # diary_replaced
-            entry_diary.diary_corrected # diary_corrected
+            entry_diary.diary_rewritten # diary_corrected
         ))
         
         conn.commit()
@@ -138,7 +139,7 @@ class HandlerDairyDB():
                 language_annotation=_entry[4],
                 diary_original=_entry[5],
                 diary_replaced=_entry[6],
-                diary_corrected=_entry[7]
+                diary_rewritten=_entry[7]
             )
             stack.append(_entry)
         # end for
