@@ -216,24 +216,6 @@ def node_language_detect(state: AgentState):
     }
     
 
-# def node_retriever(state: AgentState) -> ty.Dict:
-#     """Node 1: Retrieve
-    
-#     Operation: fetch entries from the vector DB.
-#     Dependency: vector DB.
-#     """
-#     logging.info("--- Node: Retrieve ---")
-
-#     past_errors = query_past_errors(
-#         query_text=, 
-#         lang_annotation=state["lang_annotation"], 
-#         lang_diary_body=state["lang_diary_body"],
-#         model_id_embedding=settings.MODEL_NAME_Embedding,
-#         client_embedding_model_server=client_embedding_model_server
-#     )
-#     context_str = "\n".join([f"- {err}" for err in past_errors]) if past_errors else "None"
-#     return {"retrieved_context": context_str}
-
 
 
 def __extract_xml_errors_node_processor(text: str, is_skip_1st_error_tag: bool = True):
@@ -424,7 +406,7 @@ def node_archivist(state: AgentState) -> ty.Dict:
     # Extract List using Regex
     error_list = __extract_xml_errors_node_archivist(response.content)
     # Save to DB (Loop through found errors)
-    error_list_obj = []
+    __error_list_obj = []
     for err in error_list:
         # Create your Pydantic object or Dict here
         err['primary_id_DiaryEntry'] = primary_id_DiaryEntry
@@ -433,12 +415,22 @@ def node_archivist(state: AgentState) -> ty.Dict:
         err['model_id_embedding'] = settings.MODEL_NAME_Embedding
         try:
             record = ErrorRecord(**err)
-            error_list_obj.append(record)
+            __error_list_obj.append(record)
             logger.debug(f"Grammatical-Error: {record}")
         except Exception as e:
             logger.error(e)
         # end try
     # end for
+
+    # ---- filtering the incorrect error information ----
+    error_list_obj = []
+    for err in __error_list_obj:
+        if err.example_phrase == err.correction:
+            continue
+        # end if
+        error_list_obj.append(err)
+    # end for
+    # ---- filtering the incorrect error information ----    
 
     if len(error_list_obj) > 0:
         logger.debug(f"Found {len(error_list)} errors.")
@@ -638,10 +630,13 @@ def node_save_duckdb(state: AgentState):
         language_annotation=language_annotation,
         diary_original=state["draft_text"],
         diary_replaced=state["final_response"],
-        diary_corrected=state["suggestion_response"],
+        diary_rewritten=state["suggestion_response"],
         created_at=created_at,
         primary_id=state["primary_id_DiaryEntry"]
     )
+    
+    diary_entry_primary_key = diary_entry.primary_id
+    assert diary_entry_primary_key is not None
 
     seq_unknown_expression_entry = []
     seq_bracket_text = state['unkown_expressions']
@@ -652,6 +647,7 @@ def node_save_duckdb(state: AgentState):
             language_source=language_source,
             language_annotation=language_annotation,
             created_at=created_at,
+            primary_id_DiaryEntry=diary_entry_primary_key,
             primary_id=None
         )
         seq_unknown_expression_entry.append(_unknown_expression_entry)
