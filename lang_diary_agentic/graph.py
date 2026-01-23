@@ -8,6 +8,7 @@ import typing as ty
 from typing import TypedDict
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.prompts.chat import SystemMessagePromptTemplate, HumanMessagePromptTemplate, AIMessagePromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import StateGraph, END
 from langchain_core.language_models import BaseLanguageModel
@@ -17,7 +18,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 # from langdetect import detect
 
 from .utils import check_language
-from .llm_custom_api_wrapper import CustomHFServerLLM, CustomEmbeddingModelServer
+from .llm_custom_api_wrapper import CustomHFServerLLM, RemoteServerEmbeddings
 from .vector_store import query_past_errors, add_error_logs
 from .logging_configs import apply_logging_suppressions
 from .models.vector_store_entry import ErrorRecord
@@ -43,9 +44,10 @@ class AgentState(TypedDict):
     retrieved_context: str
     final_response: str
     suggestion_response: str
-    new_errors: str
+    # new_errors: str
     unkown_expressions: ty.List[ty.Dict[str, str]]
     total_review: str
+    grammatical_errors_extracted: ty.List[ErrorRecord]
     # meta-information
     lang_annotation: ty.Optional[str]
     lang_diary_body: ty.Optional[str]
@@ -130,18 +132,11 @@ else:
     raise ValueError(f"Invalid Mode_Deployment: {settings.Mode_Deployment}")
 # end if
 
-client_embedding_model_server = CustomEmbeddingModelServer(api_url=settings.Server_API_Endpoint)
+client_embedding_model_server = RemoteServerEmbeddings(api_url=settings.Server_API_Endpoint)
 
 # ---- END: API-setups ----
 
 
-# def format_chat_template(chat: ty.List[ty.Dict[str, str]]) -> str | ty.List[ty.Dict]:
-#     if tokenizer is not None:
-#         template = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
-#     else:
-#         template = chat
-#     # end if
-#     return template
 
 
 def create_compatible_chain(formatted_input: ty.List[ty.Tuple], 
@@ -149,10 +144,11 @@ def create_compatible_chain(formatted_input: ty.List[ty.Tuple],
     """
     Dynamically builds the chain based on whether input is String or List.
     """
-    if isinstance(formatted_input, str):
-        # 1. Local Model Path (String Input)
+    if settings.Mode_Deployment == "server":
+        # # 1. Local Model Path (String Input)
         prompt = ChatPromptTemplate.from_messages(formatted_input)
-    else:
+
+    elif settings.Mode_Deployment == "cloud_api":
         # 2. API Path (List Input)
         # We must convert dicts -> LangChain Message Objects
         messages = []
@@ -167,9 +163,9 @@ def create_compatible_chain(formatted_input: ty.List[ty.Tuple],
         # Create a ChatPromptTemplate from these messages
         prompt = ChatPromptTemplate.from_messages(messages)
 
-    # 3. Build and return the chain
+    # Build and return the chain
     # Note: We invoke with empty dict {} because the prompt is already fully populated
-    chain = prompt | llm | StrOutputParser()
+    chain = prompt | llm
     return chain
 
 
@@ -223,21 +219,23 @@ def node_language_detect(state: AgentState):
     }
     
 
-def node_retriever(state: AgentState) -> ty.Dict:
-    """Node 1: Retrieve
+# def node_retriever(state: AgentState) -> ty.Dict:
+#     """Node 1: Retrieve
     
-    Operation: fetch entries from the vector DB.
-    Dependency: vector DB.
-    """
-    logging.info("--- Node: Retrieve ---")
-    past_errors = query_past_errors(
-        query_text=state["draft_text"], 
-        lang_annotation=state["lang_annotation"], 
-        lang_diary_body=state["lang_diary_body"],
-        model_id_embedding=settings.MODEL_NAME_Embedding
-    )
-    context_str = "\n".join([f"- {err}" for err in past_errors]) if past_errors else "None"
-    return {"retrieved_context": context_str}
+#     Operation: fetch entries from the vector DB.
+#     Dependency: vector DB.
+#     """
+#     logging.info("--- Node: Retrieve ---")
+
+#     past_errors = query_past_errors(
+#         query_text=, 
+#         lang_annotation=state["lang_annotation"], 
+#         lang_diary_body=state["lang_diary_body"],
+#         model_id_embedding=settings.MODEL_NAME_Embedding,
+#         client_embedding_model_server=client_embedding_model_server
+#     )
+#     context_str = "\n".join([f"- {err}" for err in past_errors]) if past_errors else "None"
+#     return {"retrieved_context": context_str}
 
 
 
@@ -313,23 +311,18 @@ def node_translator(state: AgentState) -> ty.Dict:
     )
 
 
-    # template = [
-    #     {"role": "system", "content": f"You are a translator from {lang_annotation_natural_name} to {lang_diary_body_natural_name}."},
-    #     {"role": "user", "content": user_content},
-    # ]
-
     template = [
         ("system", f"You are a translator from {lang_annotation_natural_name} to {lang_diary_body_natural_name}."),
         ("user", user_content)
     ]
-    chain = create_compatible_chain(template, llm_large)
+    chain = create_compatible_chain(template, llm_large.bind(max_tokens=500, enable_thinking=False))
     response = chain.invoke({
         "unkown_expressions": json.dumps(state['unkown_expressions']), 
         "lang_annotation": lang_annotation,
     })
-    # Simple cleanup to remove the prompt from the output if the model echos it
-    clean_response = response.split("<|assistant|>")[-1]
 
+    # Simple cleanup to remove the prompt from the output if the model echos it
+    clean_response = response.content.split("<|assistant|>")[-1]
     seq_translations = __extract_xml_errors_node_processor(clean_response)
 
     # replace the bracketed [text] one-by-one
@@ -411,27 +404,7 @@ def node_archivist(state: AgentState) -> ty.Dict:
 
     lang_diary_body = state['lang_diary_body']
     
-    # chat = [
-    #     {
-    #         "role": "system",
-    #         "content": f"You are a strict language grammarian of {lang_diary_body}." 
-    #     },
-    #     {
-    #         "role": "user", 
-    #         "content": (
-    #             "Task: Identify ALL grammatical, vocabulary, or spelling errors in the user's draft.\n"
-    #             "For EACH error, output an XML block exactly like this:\n\n"
-    #             "<error>\n"
-    #             "  <rule>The specific rule violated</rule>\n"
-    #             "  <phrase>The incorrect phrase from text</phrase>\n"
-    #             "  <correction>The corrected phrase</correction>\n"
-    #             "  <category>Grammar OR Vocabulary OR Spelling</category>\n"
-    #             "</error>\n\n"
-    #             "If there are no errors, output: <no_errors/>\n\n"
-    #             f"Draft: {state['final_response']}"
-    #         )
-    #     }
-    # ]
+
     template = [
         ("system", f"You are a strict language grammarian of {lang_diary_body}." ),
         ("user", (
@@ -448,12 +421,12 @@ def node_archivist(state: AgentState) -> ty.Dict:
             )
     ]
 
-    chain = chain = create_compatible_chain(template, llm_large)
+    chain = chain = create_compatible_chain(template, llm_large.bind(max_tokens=1024, enable_thinking=True))
     response  = chain.invoke({})
 
-    # 4. Extract List using Regex
-    error_list = __extract_xml_errors_node_archivist(response)
-    # 5. Save to DB (Loop through found errors)
+    # Extract List using Regex
+    error_list = __extract_xml_errors_node_archivist(response.content)
+    # Save to DB (Loop through found errors)
     error_list_obj = []
     for err in error_list:
         # Create your Pydantic object or Dict here
@@ -478,64 +451,62 @@ def node_archivist(state: AgentState) -> ty.Dict:
     # end if
     
     return {
-        "new_errors": error_list, 
+        "grammatical_errors_extracted": error_list, 
         "primary_id_DiaryEntry": primary_id_DiaryEntry,
         "diary_date": diary_date,
         "created_at": created_at
     }
 
 
-
-def _func_routine_node_rewriter(prompt_content: str, state: AgentState, input_variables: ty.List[str]) -> ty.Tuple[str, str, bool]:
+PossibleReturnRoutineNodeRewriter = ty.Literal['success', 'insufficient_length', 'incorrect_language', 'xml_error']
+def _func_routine_node_rewriter(prompt_content: str, state: AgentState, default_max_length: int) -> ty.Tuple[str, str, str]:
     """
     
-    Return: (rewritten-text, True or False).
+    Return: (rewritten-text, full-response, error-code).
     """
     lang_code_diary = state['lang_diary_body']
     lang_name_natural_lan: str = Iso693_code2natural_name[lang_code_diary]
-
-    # chat = [
-    #     {
-    #         "role": "system",
-    #         "content": f"You are an expert {lang_name_natural_lan} editor."
-
-    #     },
-    #     {
-    #         "role": "user", 
-    #         "content": prompt_content
-    #     }
-    # ]
 
     template = [
         ("system", f"You are an expert {lang_name_natural_lan} editor."),
         ("user", prompt_content)
     ]
-    chain = create_compatible_chain(template, llm_large)
+    chain = create_compatible_chain(template, llm_large.bind(max_length=default_max_length, enable_thinking=False))
 
     response  = chain.invoke({
         "user_text": state['final_response'], 
         "target_lang": lang_name_natural_lan, 
         "level_rewriting": state['level_rewriting']
     })
-    breakpoint()
+
     logger.info(f"Rewriter response: {response}")
     logger.debug(f"dialy-lang={state['lang_diary_body']}. Level-rewiritng={state['level_rewriting']}")
-    group_replaced = re.findall(r'<rewriting>(.*?)</rewriting>', response, re.DOTALL)
+    response_text: str = response.content
+    group_replaced = re.findall(r'<rewriting>(.*?)</rewriting>', response_text, re.DOTALL)
+        
     if group_replaced == []:
-        logger.warning(f"Regex error. Return the full response. Response={response}")
+        logger.warning(f"Regex error. Return the full response. Response={response_text}")
 
-        return response, response, False
+        return response_text, response_text, 'xml_error'
+    elif response.response_metadata['finish_reason'] == "length":
+        return response_text, response_text, 'insufficient_length'
     else:
         text_rewriting = group_replaced[-1]
-        text_rewriting = text_rewriting.replace('[', '').replace(']', '')
+        _detected_language = check_language.detect_language(text_rewriting)
 
-        return text_rewriting, response, True
+        if _detected_language != lang_code_diary:
+            logger.warning(f"Unmatched Language code. Expected code={lang_code_diary}, Rewriting-text={_detected_language}. Retry.")
+            return response_text, response_text, 'incorrect_language'
+        else:
+            text_rewriting = text_rewriting.replace('[', '').replace(']', '')
+
+            return text_rewriting, response_text, 'success'
     # end if
 
     
 
 
-def node_rewriter(state: AgentState, max_try: int = 5) -> ty.Dict:
+def node_rewriter(state: AgentState, max_try: int = 5, default_max_length: int = 512) -> ty.Dict:
     """Node: Rewritting"""
     logging.info("--- Node: Rewriting ---")
 
@@ -563,9 +534,9 @@ def node_rewriter(state: AgentState, max_try: int = 5) -> ty.Dict:
             break
         # end if
 
-        _response_rewriting, _full_response, _flag = _func_routine_node_rewriter(prompt_content, state, input_variables=['target_lang', 'level_rewriting', 'user_text'])
+        _response_rewriting, _full_response, _flag_error = _func_routine_node_rewriter(prompt_content, state, default_max_length)
 
-        if _flag is False:
+        if _flag_error == 'xml_error':
             # case: XML does not exist.
             logger.warning("failed to extract XML. retry.")
             _msg_addition = "IMPORTANT: Return the result ONLY as XML in the following structure:\n<rewriting>rewritten text</rewriting>\n"
@@ -574,15 +545,14 @@ def node_rewriter(state: AgentState, max_try: int = 5) -> ty.Dict:
             continue
         # end if
 
-        assert isinstance(_response_rewriting, str)
-        _detected_language = check_language.detect_language(_response_rewriting)
-        if _detected_language != lang_code_diary:
-            logger.warning(f"Unmatched Language code. Expected code={lang_code_diary}, Rewriting-text={_detected_language}. Retry.")
-            breakpoint()
+        if _flag_error == 'insufficient_length':
+            default_max_length += 100
+
+        if _flag_error == 'incorrect_language':
             _msg_addition = "IMPORTANT: Rewriting language must be {target_lang}. Rewrite the input text to match the {level_rewriting} CEFR level."
             _current_try += 1
             continue
-        # end if
+            # end if
 
         _validation_status = True
     # end
@@ -603,33 +573,7 @@ def node_reviewer(state: AgentState) -> ty.Dict:
         return {}
     # end if
     
-    # chat = [
-    #     {
-    #         "role": "system", 
-    #         "content": 'You are a "Memory Coach" for a language learner. Your goal is to analyze the user CURRENT MISTAKES and compare them against their ERROR HISTORY.'
-    #     },
-    #     {
-    #         "role": "user",
-    #         "content": (
-    #             "1. **Current Mistakes:** A list of errors found in the user's latest diary entry.\n"
-    #             "2. **Error History:** A list of similar errors the user made in the past (retrieved from database). \n"
-    #             "### INSTRUCTIONS\n"
-    #             'Step 1: Compare the "Current Mistakes" with the "Error History".\n'
-    #             'Step 2: Classify the situation into one of two categories:\n'
-    #             '   - **"RECURRING"**: The user made a mistake similar to one in history (e.g., gender agreement again, same vocabulary word).\n'
-    #             '   - **"NEW"**: These are fresh mistakes not seen in the provided history.\n'
-    #             'Step 3: Generate a short, helpful message.\n'
-    #             '   - If RECURRING: Be firm but encouraging. Remind them of the specific rule they forgot.\n'
-    #             '   - If NEW: Be gentle. Explain the new concept briefly.\n'
-    #             '   - The user\'s target learning level is {level_rewriting}\n'
-    #             "IMPORTANT: Return the result ONLY as XML in the following structure:\n"
-    #             "<review>review contents</review>\n\n"
-    #             "Current Mistakes: {current_mistakes}\n"
-    #             "Error History: {error_history}\n"
-    #             "Vocabularies that user does not know: {unkown_expressions}"
-    #         )
-    #     }
-    # ]
+
     template = [
         ("system", 'You are a "Memory Coach" for a language learner. Your goal is to analyze the user CURRENT MISTAKES and compare them against their ERROR HISTORY.'),
         ("user", (
@@ -653,16 +597,17 @@ def node_reviewer(state: AgentState) -> ty.Dict:
         )
     ]
     # # Chain: Prompt -> LLM
-    chain = create_compatible_chain(template, llm_large)
+    chain = create_compatible_chain(template, llm_large.bind(max_length=1024, enable_thinking=True))
 
     response  = chain.invoke({
-        "current_mistakes": state['new_errors'], 
+        "current_mistakes": state['grammatical_errors_extracted'], 
         "error_history": state['retrieved_context'], 
         "level_rewriting": state['level_rewriting'],
         "unkown_expressions": state['unkown_expressions']
     })
 
-    group_replaced = re.findall(r'<review>(.*?)</review>', response, re.DOTALL)
+    response_text: str = response.content
+    group_replaced = re.findall(r'<review>(.*?)</review>', response_text, re.DOTALL)
     if group_replaced == []:
         logger.warning(f"Regex error. Return the full response. Response={response}")
         text_review = response
@@ -731,7 +676,6 @@ def init_graph():
     workflow = StateGraph(AgentState)
     workflow.add_node("validator", node_validation)
     workflow.add_node("detector", node_language_detect)
-    workflow.add_node("retriever", node_retriever)
     workflow.add_node("translator", node_translator)
     workflow.add_node("archivist", node_archivist)
     workflow.add_node("rewriter", node_rewriter)
@@ -740,8 +684,7 @@ def init_graph():
 
     workflow.set_entry_point("validator")
     workflow.add_edge("validator", "detector")    
-    workflow.add_edge("detector", "retriever")
-    workflow.add_edge("retriever", "translator")
+    workflow.add_edge("detector", "translator")
     workflow.add_edge("translator", "archivist")
     workflow.add_edge("archivist", "rewriter")
     workflow.add_edge('rewriter', 'reviewer')

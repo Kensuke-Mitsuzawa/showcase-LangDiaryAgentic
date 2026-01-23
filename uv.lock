@@ -1271,6 +1271,7 @@ dependencies = [
     { name = "duckdb" },
     { name = "fastapi" },
     { name = "langchain" },
+    { name = "langchain-chroma" },
     { name = "langchain-community" },
     { name = "langchain-google-genai" },
     { name = "langchain-huggingface" },
@@ -1300,6 +1301,7 @@ requires-dist = [
     { name = "duckdb", specifier = ">=1.4.3" },
     { name = "fastapi", specifier = ">=0.128.0" },
     { name = "langchain", specifier = "==0.1.12" },
+    { name = "langchain-chroma", specifier = ">=0.1.4" },
     { name = "langchain-community", specifier = "==0.0.28" },
     { name = "langchain-google-genai", specifier = ">=1.0.4" },
     { name = "langchain-huggingface", specifier = ">=0.0.3" },
@@ -1340,6 +1342,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ab/3e/2f051b14f17916d261012297a15008ad0b4f12a5183d740fd2b835fc4952/langchain-0.1.12.tar.gz", hash = "sha256:5f612761ba548b81748ed8dc70535e8de0531445415028a82de3fd8255bfa8a3", size = 412008, upload-time = "2024-03-13T00:27:30.09Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b0/58/9a8777dff52bf5485c391cf3951e3d3b787afdc5967b29e25694ea014377/langchain-0.1.12-py3-none-any.whl", hash = "sha256:b4dd1760e2d035daefad08af60a209b96b729ee45492d34e3e127e553a471034", size = 809114, upload-time = "2024-03-13T00:27:25.084Z" },
+]
+
+[[package]]
+name = "langchain-chroma"
+version = "0.1.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "chromadb" },
+    { name = "fastapi" },
+    { name = "langchain-core" },
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ea/0d/b55c34db346e531d72e629891606512a792c83c8c82b40e6e313db3e36b9/langchain_chroma-0.1.4.tar.gz", hash = "sha256:5963a79bf72af0f72019084bbc1e610d03ba33ec2df9a4b47b27c0132aa533fb", size = 10157, upload-time = "2024-09-14T00:36:36.523Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bc/8c/ef0a589e523e72373a79a64cd1184682155113b865f889d815a9f264a755/langchain_chroma-0.1.4-py3-none-any.whl", hash = "sha256:2877b284fc736bfd31628aa542ed0f5410c3cdc63ad2c670cb67fc360b4a236a", size = 10452, upload-time = "2024-09-14T00:36:35.033Z" },
 ]
 
 [[package]]

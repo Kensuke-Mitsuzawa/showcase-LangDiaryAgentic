@@ -11,6 +11,7 @@ dependencies = [
     "duckdb>=1.4.3",
     "fastapi>=0.128.0",
     "langchain==0.1.12",
+    "langchain-chroma>=0.1.4",
     "langchain-community==0.0.28",
     "langchain-google-genai>=1.0.4",
     "langchain-huggingface>=0.0.3",
