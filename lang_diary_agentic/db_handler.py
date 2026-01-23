@@ -106,17 +106,33 @@ class HandlerDairyDB():
     # end def
 
     # ----- fetch -----
-    def fetch_dairy_entry_language(self,  
-                                   language_daiary_body: str,
-                                   language_annotation: ty.Optional[str] = None
+    def fetch_dairy_entry_language(self,
+                                   language_daiary_body: ty.Optional[str] = None,
+                                   language_annotation: ty.Optional[str] = None,
+                                   daiary_primary_key: ty.Optional[str] = None
                                    ) -> ty.Optional[ty.List[DiaryEntry]]:
-        conn = duckdb.connect(self.db_path)
-        if language_annotation is None:
-            query = "SELECT * FROM diary_entries WHERE language_source = ?"
-            seq_result = conn.execute(query, (language_daiary_body,)).fetchall()
+        conn = duckdb.connect(self.db_path, read_only=True)
+        query_base = "SELECT * FROM diary_entries"
+        query_vars = []
+        where_clause = []
+
+        if language_daiary_body is not None:
+            query_vars.append(language_daiary_body)
+            where_clause.append("language_source = ?")
+        if language_annotation is not None:
+            query_vars.append(language_annotation)
+            where_clause.append("language_annotation = ?")
+        if daiary_primary_key is not None:
+            query_vars.append(daiary_primary_key)
+            where_clause.append("primary_id = ?")
+        
+        query_final = query_base + " WHERE " + " AND ".join(where_clause) 
+        # end if
+
+        if len(query_vars) == 0:
+            seq_result = conn.execute(query_base).fetchall()
         else:
-            query = "SELECT * FROM diary_entries WHERE language_source = ? AND language_annotation = ?"
-            seq_result = conn.execute(query, (language_daiary_body, language_annotation)).fetchall()
+            seq_result = conn.execute(query_final, tuple(query_vars)).fetchall()
         # end if
         conn.close()
 
@@ -148,6 +164,42 @@ class HandlerDairyDB():
         return stack
     # end def
 
+    def fetch_unknown_expression(self, daiary_primary_key: ty.Optional[str] = None) -> ty.Optional[ty.List[UnknownExpressionEntry]]:
+        conn = duckdb.connect(self.db_path, read_only=True)
+        query_base = "SELECT * FROM unknown_expressions"
+        query_vars = []
+        where_clause = []
 
+        if daiary_primary_key is not None:
+            query_vars.append(daiary_primary_key)
+            where_clause.append("primary_id_DiaryEntry = ?")
+        
+
+        query_final = query_base + " WHERE " + " AND ".join(where_clause) 
+        # end if
+        seq_result = conn.execute(query_final, tuple(query_vars)).fetchall()
+        conn.close()
+
+        if seq_result is None:
+            return None
+        # end for
+
+        stack = []
+        for _entry in seq_result:
+
+            _entry = UnknownExpressionEntry(
+                primary_id=_entry[0],
+                primary_id_DiaryEntry=_entry[1],
+                created_at=_entry[2],
+                expression=_entry[3],
+                expression_translation=_entry[4],
+                language_source=_entry[5],
+                language_annotation=_entry[6]
+            )
+            stack.append(_entry)
+        # end for
+
+        return stack
+ 
 
 

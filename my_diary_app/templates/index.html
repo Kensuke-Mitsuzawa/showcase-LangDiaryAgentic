@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diary List</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .st-header { border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 20px; }
+        .sidebar { background-color: #f8f9fa; padding: 20px; border-radius: 8px; height: 100%; }
+        .result-box { margin-bottom: 15px; }
+        .loading-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 1000; text-align: center; padding-top: 20%; }
+    </style>
+</head>
+
+<body class="container mt-5">
+    <h1>📘 LinguaLog</h1>
+    <p><a href="{{ url_for('diary_editor') }}">Diary editor view</a></p>
+    
+    <table class="table table-hover mt-4">
+        <thead class="table-dark">
+            <tr>
+                <th>Date</th>
+                <th>Diary Language</th>
+                <th>Annotation Lang</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in diaries %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('diary_detail', diary_id=row['primary_id']) }}">{{row['date_diary']}}</a>
+                </td>
+                <td>{{ row['language_source'] }}</td>
+                <td>{{ row['language_annotation'] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
