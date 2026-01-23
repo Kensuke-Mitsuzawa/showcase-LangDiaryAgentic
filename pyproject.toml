@@ -3,7 +3,7 @@ name = "lang_diary_agentic"
 version = "0.1"
 description = ""
 authors = [{ name = "Kensuke-Mitsuzawa", email = "kensuke.mit@gmail.com" }]
-requires-python = "<3.13,>=3.12"
+requires-python = ">=3.12"
 readme = "README.md"
 dependencies = [
     "accelerate>=1.12.0",
@@ -17,6 +17,7 @@ dependencies = [
     "langchain-openai>=0.1.7",
     "langdetect>=1.0.9",
     "langgraph==0.0.26",
+    "lingua-language-detector>=2.1.1",
     "pycountry>=24.6.1",
     "pydantic-settings>=2.12.0",
     "python-dotenv==1.0.1",

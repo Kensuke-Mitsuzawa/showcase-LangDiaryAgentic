@@ -19,8 +19,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer, pipeline
 
-from langdetect import detect
+# from langdetect import detect
 
+from .utils import check_language
 from .llm_custom_api_wrapper import CustomHFServerLLM
 from .vector_store import query_past_errors, add_error_logs
 from .logging_configs import apply_logging_suppressions
@@ -28,6 +29,7 @@ from .models.vector_store_entry import ErrorRecord
 from .db_handler import HandlerDairyDB, UnknownExpressionEntry, DiaryEntry
 from .static import (
     Languages_Code,
+    Iso693_code2natural_name,
     PossibleChoiceModeDeployment,
     PossibleCloudLLMProvider,
     PossibleLevelRewriting
@@ -50,8 +52,8 @@ class AgentState(TypedDict):
     unkown_expressions: ty.List[ty.Dict[str, str]]
     total_review: str
     # meta-information
-    lang_annotation: ty.Optional[str]  # e.g., "fr"
-    lang_diary_body: ty.Optional[str]  # e.g., "en"
+    lang_annotation: ty.Optional[str]
+    lang_diary_body: ty.Optional[str]
     level_rewriting: str    
     primary_id_DiaryEntry: str
     diary_date: str
@@ -145,15 +147,15 @@ def cloud_llm(
 
     # 2. Google Gemini Implementation
     elif provider.lower() == "google":
-        # Uses GOOGLE_API_KEY environment variable by default if api_key is None
-        llm = ChatGoogleGenerativeAI(
-            google_api_key=api_key,
-            model=model_name or "gemini-1.5-flash",
-            temperature=temperature,
-            convert_system_message_to_human=True # Helps with older Gemini quirks
-        )
-        return llm
-
+        raise NotImplementedError()
+        # # Uses GOOGLE_API_KEY environment variable by default if api_key is None
+        # llm = ChatGoogleGenerativeAI(
+        #     google_api_key=api_key,
+        #     model=model_name or "gemini-1.5-flash",
+        #     temperature=temperature,
+        #     convert_system_message_to_human=True # Helps with older Gemini quirks
+        # )
+        # return llm
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
@@ -188,15 +190,14 @@ def format_chat_template(chat: ty.List[ty.Dict[str, str]]) -> str | ty.List[ty.D
     return template
 
 
-def create_compatible_chain(formatted_input: str | ty.List[ty.Dict], llm):
+def create_compatible_chain(formatted_input: str | ty.List[ty.Dict], 
+                            llm):
     """
     Dynamically builds the chain based on whether input is String or List.
     """
     if isinstance(formatted_input, str):
         # 1. Local Model Path (String Input)
-        prompt = PromptTemplate(
-            template=formatted_input,
-            input_variables=[])
+        prompt = PromptTemplate.from_template(template=formatted_input)
     else:
         # 2. API Path (List Input)
         # We must convert dicts -> LangChain Message Objects
@@ -241,8 +242,8 @@ def node_language_detect(state: AgentState):
         _language_diary = state.get("lang_diary_body").strip()
         _language_annotation = state.get("lang_annotation").strip()
 
-        assert _language_diary in Languages_Code, f"The language code {_language_diary} is not valid. Check the language code in 2 character."
-        assert _language_annotation in Languages_Code, f"The language code {_language_annotation} is not valid. Check the language code in 2 character."
+        assert _language_diary in Languages_Code, f"The language code {_language_diary} is not valid. Check the language code in ISO 693-3."
+        assert _language_annotation in Languages_Code, f"The language code {_language_annotation} is not valid. Check the language code in ISO 693-3."
 
         return {
             "lang_annotation": _language_annotation,
@@ -256,10 +257,10 @@ def node_language_detect(state: AgentState):
 
 
     # Since this part is supposed to be shorter. So, I use the tranditional ML model.
-    language_annotation = detect(' '.join(seq_text_blanket))
+    language_annotation = check_language.detect_language(' '.join(seq_text_blanket))
 
     draft_text_without_blanket = re.sub(r'\[.+\]', '', draft_text)
-    language_target = detect(draft_text_without_blanket)
+    language_target = check_language.detect_language(' '.join(seq_text_blanket))
 
     return {
         "lang_diary_body": language_target,
@@ -336,46 +337,37 @@ def node_translator(state: AgentState) -> ty.Dict:
     sub_phrase_language_pair: str = ""
     lang_annotation = state["lang_annotation"]
     lang_diary_body = state["lang_diary_body"]
+    lang_annotation_natural_name = Iso693_code2natural_name[lang_annotation]
+    lang_diary_body_natural_name = Iso693_code2natural_name[lang_diary_body]
 
     if lang_annotation is None or lang_diary_body is None:
         sub_phrase_language_pair = ""
     else:
-        sub_phrase_language_pair = f"The bracketed text is written in {lang_annotation}. The translation target language is {lang_diary_body}."
+        sub_phrase_language_pair = f"The bracketed text is written in {lang_annotation_natural_name}. The translation target language is {lang_diary_body_natural_name}."
     # end if
 
     xml_schema = """
-        "<translations>\n"
-        "   <bracket>bracketed [text]</bracket>"
-        "   <translation>corresponding translation</translation>"        
-        "</translations>"
-        }"""
+        <translations>\n"<bracket>bracketed [text]</bracket><translation>corresponding translation</translation></translations>
+    """
 
     user_content = (
-        "You are a translator.\n"
         "Task:\n"
-        "Translate text in bracketed [text] one by one. {sub_phrase_language_pair}\n"
+        f"Translate text in bracketed [text] one by one. {sub_phrase_language_pair}\n"
         "IMPORTANT: Return the result ONLY as XML in the following structure:\n"
-        "{xml_schema}\n\n"
+        f"{xml_schema}\n\n"
         "INPUT: {unkown_expressions}"
     )
 
+
     chat = [
+        {"role": "system", "content": f"You are a translator from {lang_annotation_natural_name} to {lang_diary_body_natural_name}."},
         {"role": "user", "content": user_content},
     ]
-
     template = format_chat_template(chat)
-    # prompt = PromptTemplate(
-    #     template=template,
-    #     input_variables=[]
-    # )    
-    # chain = prompt | llm_large | StrOutputParser()
-    # breakpoint()
     chain = create_compatible_chain(template, llm_large)
     response = chain.invoke({
         "unkown_expressions": json.dumps(state['unkown_expressions']), 
-        "sub_phrase_language_pair": sub_phrase_language_pair,
         "lang_annotation": lang_annotation,
-        "xml_schema": xml_schema
     })
     # Simple cleanup to remove the prompt from the output if the model echos it
     clean_response = response.split("<|assistant|>")[-1]
@@ -458,12 +450,17 @@ def node_archivist(state: AgentState) -> ty.Dict:
         "created_at": created_at
     }
     # end if
+
+    lang_diary_body = state['lang_diary_body']
     
     chat = [
         {
+            "role": "system",
+            "content": f"You are a strict language grammarian of {lang_diary_body}." 
+        },
+        {
             "role": "user", 
             "content": (
-                "You are a strict language grammarian.\n"
                 "Task: Identify ALL grammatical, vocabulary, or spelling errors in the user's draft.\n"
                 "For EACH error, output an XML block exactly like this:\n\n"
                 "<error>\n"
@@ -478,8 +475,6 @@ def node_archivist(state: AgentState) -> ty.Dict:
         }
     ]
 
-    # template = format_chat_template(chat)
-    # prompt = PromptTemplate(template=template, input_variables=[])    
     # # Chain: Prompt -> LLM
     # chain = prompt | llm_large
     template = format_chat_template(chat)
@@ -520,7 +515,53 @@ def node_archivist(state: AgentState) -> ty.Dict:
     }
 
 
-def node_rewriter(state: AgentState) -> ty.Dict:
+
+def _func_routine_node_rewriter(prompt_content: str, state: AgentState, input_variables: ty.List[str]) -> ty.Tuple[str, str, bool]:
+    """
+    
+    Return: (rewritten-text, True or False).
+    """
+    lang_code_diary = state['lang_diary_body']
+    lang_name_natural_lan: str = Iso693_code2natural_name[lang_code_diary]
+
+    chat = [
+        {
+            "role": "system",
+            "content": f"You are an expert {lang_name_natural_lan} editor."
+
+        },
+        {
+            "role": "user", 
+            "content": prompt_content
+        }
+    ]
+
+    chain = create_compatible_chain(chat, llm_large)
+
+    response  = chain.invoke({
+        "user_text": state['final_response'], 
+        "target_lang": lang_name_natural_lan, 
+        "level_rewriting": state['level_rewriting']
+    })
+    breakpoint()
+    logger.info(f"Rewriter response: {response}")
+    logger.debug(f"dialy-lang={state['lang_diary_body']}. Level-rewiritng={state['level_rewriting']}")
+    group_replaced = re.findall(r'<rewriting>(.*?)</rewriting>', response, re.DOTALL)
+    if group_replaced == []:
+        logger.warning(f"Regex error. Return the full response. Response={response}")
+
+        return response, response, False
+    else:
+        text_rewriting = group_replaced[-1]
+        text_rewriting = text_rewriting.replace('[', '').replace(']', '')
+
+        return text_rewriting, response, True
+    # end if
+
+    
+
+
+def node_rewriter(state: AgentState, max_try: int = 5) -> ty.Dict:
     """Node: Rewritting"""
     logging.info("--- Node: Rewriting ---")
 
@@ -529,46 +570,53 @@ def node_rewriter(state: AgentState) -> ty.Dict:
         return {}
     # end if
     
-    chat = [
-        {
-            "role": "user", 
-            "content": (
-                "You are an expert language=`{target_lang}` editor. Rewrite the following text to be Advanced ({level_rewriting} Level).\n"
-                "Rules:\n"
-                "1. Translate `[bracketed language=`{source_lang}` text]` to contextually correct language=`{target_lang}`.\n"
-                "2. Upgrade vocabulary to be more sophisticated.\n"
-                "3. Fix all grammar errors.\n"
-                "IMPORTANT: Return the result ONLY as XML in the following structure:\n"
-                "<rewriting>rewritten text</rewriting>\n\n"
-                "Input: `{user_text}`"
-            )
-        }
-    ]
+    lang_code_diary = state['lang_diary_body']
 
-    # template = format_chat_template(chat)
-    # prompt = PromptTemplate(template=template, input_variables=[])
-    # # Chain: Prompt -> LLM
-    # chain = prompt | llm_large
+    prompt_content = (
+        "Task:\n"
+        "1. Rewrite the following text (in the {level_rewriting} level of the CEFR). The rewriting language must stick with language={target_lang}\n"
+        "IMPORTANT: Return the result ONLY as XML in the following structure:\n"
+        "<rewriting>rewritten text</rewriting>\n\n"
+        "Input: {user_text}"
+    )
+    # ---- loop: LLM-call and validation ----
+    _current_try = 0
+    _validation_status = False
+    while True:
+        if _current_try == max_try:
+            break
+        if _validation_status is True:
+            break
+        # end if
 
-    chain = create_compatible_chain(chat, llm_large)
-    response  = chain.invoke({
-        "user_text": state['final_response'], 
-        "target_lang": state['lang_diary_body'], 
-        "source_lang": state['lang_annotation'],
-        "level_rewriting": state['level_rewriting']
-    })
+        _response_rewriting, _full_response, _flag = _func_routine_node_rewriter(prompt_content, state, input_variables=['target_lang', 'level_rewriting', 'user_text'])
 
-    group_replaced = re.findall(r'<rewriting>(.*?)</rewriting>', response, re.DOTALL)
-    if group_replaced == []:
-        logger.warning(f"Regex error. Return the full response. Response={response}")
-        text_rewriting = response
-    else:
-        text_rewriting = group_replaced[-1]
-        text_rewriting = text_rewriting.replace('[', '').replace(']', '')
-    # end if
+        if _flag is False:
+            # case: XML does not exist.
+            logger.warning(f"failed to extract XML. retry.")
+            _msg_addition = "IMPORTANT: Return the result ONLY as XML in the following structure:\n<rewriting>rewritten text</rewriting>\n"
+            prompt_content += _msg_addition
+            _current_try += 1
+            continue
+        # end if
+
+        assert isinstance(_response_rewriting, str)
+        _detected_language = check_language.detect_language(_response_rewriting)
+        if _detected_language != lang_code_diary:
+            logger.warning(f"Unmatched Language code. Expected code={lang_code_diary}, Rewriting-text={_detected_language}. Retry.")
+            breakpoint()
+            _msg_addition = "IMPORTANT: Rewriting language must be {target_lang}. Rewrite the input text to match the {level_rewriting} CEFR level."
+            _current_try += 1
+            continue
+        # end if
+
+        _validation_status = True
+    # end
+    # ----
+
 
     return {
-        "suggestion_response": text_rewriting
+        "suggestion_response": _response_rewriting
     }
 
 

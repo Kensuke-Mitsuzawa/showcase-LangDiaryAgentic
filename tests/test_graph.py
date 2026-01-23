@@ -9,8 +9,8 @@ def test_graph():
 
     result = app_graph.invoke({
         "draft_text": user_input,
-        "lang_diary_body": 'fr',
-        "lang_annotation": 'en',
+        "lang_diary_body": 'fra',
+        "lang_annotation": 'eng',
         "level_rewriting": 'B2'
     })
     for _k, _v in result.items():
