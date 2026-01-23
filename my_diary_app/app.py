@@ -27,16 +27,17 @@ assert ChromDB_PATH is not None
 
 
 # --- VIEW The List (Table) ---
-@app.route('/')
+@app.route('/diary_viewer')
 def index():
     handler = HandlerDairyDB(DB_PATH)
     
     seq_entries = handler.fetch_dairy_entry_language()
     if seq_entries is None:
-        return render_template('index.html', diaries=[])
+        return render_template('diary_viewer.html', diaries=[])
     # end if
     diaries = [_r.model_dump() for _r in seq_entries]
-    return render_template('index.html', diaries=diaries)
+
+    return render_template('diary_viewer.html', diaries=diaries)
 
 
 # --- VIEW 2: Diary Detail ---
@@ -78,7 +79,7 @@ def diary_detail(diary_id):
 
 
 # --- 3. Routes ---
-@app.route('/diary_editor', methods=['GET', 'POST'])
+@app.route('/', methods=['GET', 'POST'])
 def diary_editor():
     result = None
     error = None
@@ -88,7 +89,8 @@ def diary_editor():
         'draft_text': '',
         'lang_diary_body': '',
         'lang_annotation': '',
-        'level_rewriting': 'B2'
+        'level_rewriting': 'B2',
+        'title_diary': ''
     }
 
     if request.method == 'POST':
@@ -97,7 +99,8 @@ def diary_editor():
             "draft_text": request.form.get('draft_text'),
             "lang_diary_body": request.form.get('lang_diary_body'),
             "lang_annotation": request.form.get('lang_annotation'),
-            "level_rewriting": request.form.get('level_rewriting')
+            "level_rewriting": request.form.get('level_rewriting'),
+            "title_diary": request.form.get('title_diary')
         }
 
         if form_data['draft_text']:

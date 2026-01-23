@@ -48,9 +48,10 @@ class AgentState(TypedDict):
     # meta-information
     lang_annotation: ty.Optional[str]
     lang_diary_body: ty.Optional[str]
-    level_rewriting: str    
-    primary_id_DiaryEntry: str
+    level_rewriting: PossibleLevelRewriting
     diary_date: str
+    title_diary: str
+    primary_id_DiaryEntry: str
     created_at: datetime
     # signal to convey the task status
     is_processor_success: bool
@@ -632,7 +633,10 @@ def node_save_duckdb(state: AgentState):
         diary_replaced=state["final_response"],
         diary_rewritten=state["suggestion_response"],
         created_at=created_at,
-        primary_id=state["primary_id_DiaryEntry"]
+        primary_id=state["primary_id_DiaryEntry"],
+        level_rewriting=state["level_rewriting"],
+        model_id_tutor=settings.MODEL_NAME_Primary,
+        title_diary=state["title_diary"],
     )
     
     diary_entry_primary_key = diary_entry.primary_id

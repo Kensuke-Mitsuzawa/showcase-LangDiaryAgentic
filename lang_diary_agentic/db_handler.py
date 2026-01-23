@@ -48,7 +48,10 @@ class HandlerDairyDB():
                 language_annotation VARCHAR,
                 diary_original TEXT,
                 diary_replaced TEXT,
-                diary_rewritten TEXT
+                diary_rewritten TEXT,
+                level_rewriting VARCHAR,
+                model_id_tutor VARCHAR,
+                title_diary VARCHAR
             );
         """)
         conn.close()
@@ -85,7 +88,7 @@ class HandlerDairyDB():
         # We use a parameterized query for security (prevents SQL injection)
         query = """
         INSERT INTO diary_entries VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
         """
             
@@ -97,7 +100,10 @@ class HandlerDairyDB():
             entry_diary.language_annotation, # language_annotation
             entry_diary.diary_original, # diary_original
             entry_diary.diary_replaced, # diary_replaced
-            entry_diary.diary_rewritten # diary_corrected
+            entry_diary.diary_rewritten, # diary_corrected
+            entry_diary.level_rewriting,
+            entry_diary.model_id_tutor,
+            entry_diary.title_diary
         ))
         
         conn.commit()
@@ -156,7 +162,10 @@ class HandlerDairyDB():
                 language_annotation=_entry[4],
                 diary_original=_entry[5],
                 diary_replaced=_entry[6],
-                diary_rewritten=_entry[7]
+                diary_rewritten=_entry[7],
+                level_rewriting=_entry[8],
+                model_id_tutor=_entry[9],
+                title_diary=_entry[10]
             )
             stack.append(_entry)
         # end for

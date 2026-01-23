@@ -21,6 +21,7 @@
         <thead class="table-dark">
             <tr>
                 <th>Date</th>
+                <th>Title</th>
                 <th>Diary Language</th>
                 <th>Annotation Lang</th>
             </tr>
@@ -31,6 +32,7 @@
                 <td>
                     <a href="{{ url_for('diary_detail', diary_id=row['primary_id']) }}">{{row['date_diary']}}</a>
                 </td>
+                <td>{{ row['title_diary'] }}</td>
                 <td>{{ row['language_source'] }}</td>
                 <td>{{ row['language_annotation'] }}</td>
             </tr>

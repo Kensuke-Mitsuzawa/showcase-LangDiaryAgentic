@@ -3,6 +3,7 @@ import hashlib
 from pydantic import BaseModel, Field
 from datetime import datetime
 
+from ..static import PossibleLevelRewriting
 
 class DiaryEntry(BaseModel):
     date_diary: str
@@ -11,6 +12,9 @@ class DiaryEntry(BaseModel):
     diary_original: str
     diary_replaced: str
     diary_rewritten: str
+    level_rewriting: PossibleLevelRewriting
+    model_id_tutor: str
+    title_diary: str
     created_at: datetime = Field(default_factory=datetime.now)    
     primary_id: ty.Optional[str] = None
 

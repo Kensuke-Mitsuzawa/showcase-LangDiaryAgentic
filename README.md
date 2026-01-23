@@ -33,7 +33,7 @@ graph TD
 
 %% 1. The User Interface Layer
 
-subgraph "Frontend (Streamlit)"
+subgraph "Frontend (Flask)"
 
 UI_Input[User Input: Mixed-Lang Draft]
 
@@ -126,7 +126,7 @@ style VDB fill:#bbf,stroke:#333,stroke-width:2px,color:black
 | Orchestration | LangChain / LangGraph | For building cyclic graph-based agent workflows. |
 | LLM Backend | HuggingFace Transformers | To run open-weights models locally without API costs.|
 | API Layer | FastAPI | High-performance async backend. |
-| Frontend | Streamlit | Rapid prototyping of interactive data/chat interfaces.|
+| Frontend | Flask | Rapid prototyping of interactive data/chat interfaces.|
 | Vector Store | ChromaDB | Lightweight, local vector search for RAG.|
 |Analytics DB | DuckDB | In-process SQL OLAP for diary analysis. |
 | Package Mgmt | uv | Extremely fast Python dependency management (Rust-based). |
@@ -186,11 +186,8 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 ## Launch the Frontend Interfaces:
  
 ```
-# For writing diaries
-streamlit run ui/data_input_viewer.py
-
-# For reviewing analytics
-streamlit run ui/data_viewer.py
+% at ./my_diary_app directory
+python app.py
 ```
 
 ## 🚀 Deployment with Docker
