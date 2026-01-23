@@ -35,8 +35,8 @@ with st.sidebar:
 
 user_input = st.text_area("Write your diary entry:", height=150, placeholder="Example: Je m’appelle Jessica. Je suis une [girl], je suis française et j’ai [13 years old]. Je vais à l’école à Nice, mais j’habite à Cagnes-Sur-Mer. J’ai deux [brothers].")
 st.caption("Example Text: Je me appelle Jessica. Je suis [a girl], je suis français et je avoir [13 years old].")
-lang_diary_body = st.text_input("The language that you write the diary entry.", placeholder="Language code. Example: fr")
-lang_annotation = st.text_input("The language that you use for the annotation [LANG].", placeholder="Language code. Example: en")
+lang_diary_body = st.text_input("The language code (ISO 639-3) that you write the diary entry.", placeholder="Language code. Example: fra")
+lang_annotation = st.text_input("The language code (ISO 639-3) that you use for the annotation [LANG].", placeholder="Language code. Example: eng")
 lang_level_rewriting = st.text_input("Preferred level for the rewriting. Ex. B1, B2, C1", placeholder="B2", value="B2")
 
 if st.button("Analyze Entry"):
@@ -79,15 +79,15 @@ if st.button("Analyze Entry"):
                     else:
                         st.caption("No relevant past errors found.")
                     # end if
-                    if "None" not in result["new_errors"]:
+                    if "None" not in result["grammatical_errors_extracted"]:
                         st.warning("**New Learning Saved:**\n")
-                        _obj_error_analysis = result['new_errors']
+                        _obj_error_analysis = result['grammatical_errors_extracted']
                         for _entry in _obj_error_analysis:
                             _document_output = ""
                             _document_output += f"Error-category: {_entry['category']}\n\n"
                             _document_output += f"Error-type: {_entry['error_rule']}\n\n"
+                            _document_output += f"You wrote: {_entry['example_phrase']}\n\n"
                             _document_output += f"Correction: {_entry['correction']}\n\n"
-                            _document_output += f"Input: {_entry['example_phrase']}\n\n"
                             st.warning(f"{_document_output}")                            
                         # end for
             except Exception as e:
