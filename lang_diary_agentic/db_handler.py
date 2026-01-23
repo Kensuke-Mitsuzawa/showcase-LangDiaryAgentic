@@ -26,6 +26,7 @@ class HandlerDairyDB():
         conn.execute("""
             CREATE TABLE IF NOT EXISTS unknown_expressions (
                 primary_id VARCHAR PRIMARY KEY,
+                primary_id_DiaryEntry VARCHAR,
                 created_at TIMESTAMP,
                 expression VARCHAR,
                 expression_translation VARCHAR,
@@ -47,7 +48,7 @@ class HandlerDairyDB():
                 language_annotation VARCHAR,
                 diary_original TEXT,
                 diary_replaced TEXT,
-                diary_corrected TEXT
+                diary_rewritten TEXT
             );
         """)
         conn.close()
