@@ -4,10 +4,10 @@ import json
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from langchain_community.embeddings import HuggingFaceEmbeddings
 import logging
 
 from lang_diary_agentic.logging_configs import apply_logging_suppressions
-from lang_diary_agentic import configs
 
 from lang_diary_agentic.configs import settings
 
@@ -40,6 +40,11 @@ terminators = [
 ]
 
 logger.info(f"Model {settings.MODEL_NAME_Primary} loaded successfully.")
+
+
+embedding_function = HuggingFaceEmbeddings(model_name=settings.MODEL_NAME_Embedding)
+logger.info(f"Model {settings.MODEL_NAME_Embedding} loaded successfully.")
+
 logger.info("Ready.")
 
 # 4. Define the Request Data Structure
@@ -49,7 +54,20 @@ class GenerateRequest(BaseModel):
     temperature: float = 0.7
 
 
-# 5. Define the Endpoint
+class EmbeddingRequest(BaseModel):
+    text: str
+
+
+@app.post("/embedding")
+async def generate_embedding(request: EmbeddingRequest):
+    try:
+        # Generate embedding (returns List[float])
+        vector = embedding_function.embed_query(request.text)
+        return {"embedding": vector}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/generate")
 async def generate_text(request: GenerateRequest):
     try:
@@ -86,6 +104,10 @@ async def generate_text(request: GenerateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 # end def
 
+@app.get("/generate-model-id")
+async def return_model_id():
+    return {"model_id": settings.MODEL_NAME_Primary}
+# end
 
 @app.get("/alive")
 async def return_status():

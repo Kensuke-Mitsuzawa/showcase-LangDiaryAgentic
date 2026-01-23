@@ -4,15 +4,12 @@ from typing import List
 
 
 from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
 
+from .llm_custom_api_wrapper import CustomEmbeddingModelServer
 from .models.vector_store_entry import ErrorRecord
 from .configs import settings
 
 logger = logging.getLogger(__name__)
-
-
-embedding_function = HuggingFaceEmbeddings(model_name=settings.MODEL_NAME_Embedding)
 
 
 def get_vector_store():
@@ -20,13 +17,14 @@ def get_vector_store():
     # 'all-MiniLM-L6-v2' is the industry standard for lightweight embeddings
     vector_store = Chroma(
         persist_directory=settings.ErrorVectorDB_PATH,
-        embedding_function=embedding_function,
+        embedding_function=None,
         collection_name="lingualog_errors"
     )
     return vector_store
 
 
-def add_error_logs(records: List[ErrorRecord]):
+def add_error_logs(records: List[ErrorRecord],
+                   client_embedding_model_server: CustomEmbeddingModelServer):
     """
     Save a batch of error logs to memory.
     Efficiently inserts multiple records in one DB transaction.
@@ -39,10 +37,16 @@ def add_error_logs(records: List[ErrorRecord]):
     # Prepare lists for batch insertion
     batch_texts = []
     batch_metadatas = []
+    batch_vector = []
     
     for record in records:
         # 1. Content: The text to be embedded
-        batch_texts.append(record.to_string())
+        record_string = record.to_string()
+
+        batch_texts.append(record_string)
+
+        vector_list = client_embedding_model_server.get_remote_embedding(record_string)
+        batch_vector.append(vector_list)
         
         # 2. Metadata: Structured data for filtering
         batch_metadatas.append({
@@ -59,10 +63,12 @@ def add_error_logs(records: List[ErrorRecord]):
     
     # 3. Batch Insert (One call to the DB)
     logger.info(f"💾 Saving {len(batch_texts)} errors to ChromaDB...")
-    db.add_texts(
+
+    db.add_embeddings(
         texts=batch_texts,
-        metadatas=batch_metadatas
-    )
+        embeddings=vector_list,
+        metadatas=batch_metadatas,
+)    
     # In newer Chroma versions, persist is automatic, but keeping it is safe
     if hasattr(db, "persist"):
         db.persist()
@@ -74,7 +80,11 @@ def query_past_errors(query_text: str,
                       lang_annotation: str,
                       lang_diary_body: str,
                       model_id_embedding: str, 
-                      k: int = 3):
+                      k: int = 10):
+    """
+    Args:
+        query_text: Grammatical Error Information.
+    """
     db = get_vector_store()
     
     filter_dict={

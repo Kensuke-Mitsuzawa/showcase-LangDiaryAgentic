@@ -1,4 +1,3 @@
-import torch
 import logging
 import json
 import re
@@ -7,8 +6,6 @@ from datetime import date, datetime
 
 import typing as ty
 from typing import TypedDict
-from langchain_community.llms import HuggingFacePipeline
-from langchain_core.prompts import PromptTemplate
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.output_parsers import StrOutputParser
@@ -17,12 +14,10 @@ from langchain_core.language_models import BaseLanguageModel
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer, pipeline
-
 # from langdetect import detect
 
 from .utils import check_language
-from .llm_custom_api_wrapper import CustomHFServerLLM
+from .llm_custom_api_wrapper import CustomHFServerLLM, CustomEmbeddingModelServer
 from .vector_store import query_past_errors, add_error_logs
 from .logging_configs import apply_logging_suppressions
 from .models.vector_store_entry import ErrorRecord
@@ -64,43 +59,6 @@ class AgentState(TypedDict):
 
 
 # ---- API-setups ----
-
-
-def load_tokenizer(model_id: str) -> PreTrainedTokenizer:
-    return AutoTokenizer.from_pretrained(model_id)
-
-
-
-def load_local_llm(model_id, max_tokens=500) -> HuggingFacePipeline:
-    """Helper to load a model pipeline"""
-    logger.info(f"⏳ Loading Model: {model_id}...")
-    
-    tokenizer = load_tokenizer(model_id)
-    
-    # Define the IDs that stop generation. 
-    # 32000 = <|endoftext|>, 32007 = <|end|> (Phi-3 specific)
-    terminators = [
-        tokenizer.eos_token_id,
-        tokenizer.convert_tokens_to_ids("<|end|>"),
-        tokenizer.convert_tokens_to_ids("<|assistant|>") # Safety net
-    ]    
-    
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        device_map="auto",
-        torch_dtype="auto",
-        trust_remote_code=False, 
-    )
-    pipe = pipeline(
-        "text-generation",
-        model=model,
-        tokenizer=tokenizer,
-        max_new_tokens=max_tokens,
-        temperature=0.1,
-        eos_token_id=terminators,
-        pad_token_id=tokenizer.eos_token_id
-    )
-    return HuggingFacePipeline(pipeline=pipe)
 
 
 def server_llm() -> CustomHFServerLLM:
@@ -160,7 +118,6 @@ def cloud_llm(
         raise ValueError(f"Unsupported provider: {provider}")
 
 
-tokenizer: ty.Optional[PreTrainedTokenizer]
 if settings.Mode_Deployment == "cloud_api":
     assert settings.Cloud_API_Token is not None
     llm_large = cloud_llm(api_key=settings.Cloud_API_Token, model_name=settings.MODEL_NAME_Primary)
@@ -168,36 +125,33 @@ if settings.Mode_Deployment == "cloud_api":
 elif settings.Mode_Deployment == "server":
     logger.info(f"connecting to the API endpoint: {settings.Server_API_Endpoint}")
     llm_large = server_llm()
-    tokenizer = load_tokenizer(settings.MODEL_NAME_Primary)
-    logger.info(f"API is ready.")
-elif settings.Mode_Deployment == "local":
-    llm_large = load_local_llm(settings.MODEL_NAME_Primary, max_tokens=600)
-    tokenizer = load_tokenizer(settings.MODEL_NAME_Primary)
+    logger.info("API is ready.")
 else:
     raise ValueError(f"Invalid Mode_Deployment: {settings.Mode_Deployment}")
 # end if
 
+client_embedding_model_server = CustomEmbeddingModelServer(api_url=settings.Server_API_Endpoint)
 
 # ---- END: API-setups ----
 
 
-def format_chat_template(chat: ty.List[ty.Dict[str, str]]) -> str | ty.List[ty.Dict]:
-    if tokenizer is not None:
-        template = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
-    else:
-        template = chat
-    # end if
-    return template
+# def format_chat_template(chat: ty.List[ty.Dict[str, str]]) -> str | ty.List[ty.Dict]:
+#     if tokenizer is not None:
+#         template = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
+#     else:
+#         template = chat
+#     # end if
+#     return template
 
 
-def create_compatible_chain(formatted_input: str | ty.List[ty.Dict], 
+def create_compatible_chain(formatted_input: ty.List[ty.Tuple], 
                             llm):
     """
     Dynamically builds the chain based on whether input is String or List.
     """
     if isinstance(formatted_input, str):
         # 1. Local Model Path (String Input)
-        prompt = PromptTemplate.from_template(template=formatted_input)
+        prompt = ChatPromptTemplate.from_messages(formatted_input)
     else:
         # 2. API Path (List Input)
         # We must convert dicts -> LangChain Message Objects
@@ -359,11 +313,15 @@ def node_translator(state: AgentState) -> ty.Dict:
     )
 
 
-    chat = [
-        {"role": "system", "content": f"You are a translator from {lang_annotation_natural_name} to {lang_diary_body_natural_name}."},
-        {"role": "user", "content": user_content},
+    # template = [
+    #     {"role": "system", "content": f"You are a translator from {lang_annotation_natural_name} to {lang_diary_body_natural_name}."},
+    #     {"role": "user", "content": user_content},
+    # ]
+
+    template = [
+        ("system", f"You are a translator from {lang_annotation_natural_name} to {lang_diary_body_natural_name}."),
+        ("user", user_content)
     ]
-    template = format_chat_template(chat)
     chain = create_compatible_chain(template, llm_large)
     response = chain.invoke({
         "unkown_expressions": json.dumps(state['unkown_expressions']), 
@@ -453,14 +411,30 @@ def node_archivist(state: AgentState) -> ty.Dict:
 
     lang_diary_body = state['lang_diary_body']
     
-    chat = [
-        {
-            "role": "system",
-            "content": f"You are a strict language grammarian of {lang_diary_body}." 
-        },
-        {
-            "role": "user", 
-            "content": (
+    # chat = [
+    #     {
+    #         "role": "system",
+    #         "content": f"You are a strict language grammarian of {lang_diary_body}." 
+    #     },
+    #     {
+    #         "role": "user", 
+    #         "content": (
+    #             "Task: Identify ALL grammatical, vocabulary, or spelling errors in the user's draft.\n"
+    #             "For EACH error, output an XML block exactly like this:\n\n"
+    #             "<error>\n"
+    #             "  <rule>The specific rule violated</rule>\n"
+    #             "  <phrase>The incorrect phrase from text</phrase>\n"
+    #             "  <correction>The corrected phrase</correction>\n"
+    #             "  <category>Grammar OR Vocabulary OR Spelling</category>\n"
+    #             "</error>\n\n"
+    #             "If there are no errors, output: <no_errors/>\n\n"
+    #             f"Draft: {state['final_response']}"
+    #         )
+    #     }
+    # ]
+    template = [
+        ("system", f"You are a strict language grammarian of {lang_diary_body}." ),
+        ("user", (
                 "Task: Identify ALL grammatical, vocabulary, or spelling errors in the user's draft.\n"
                 "For EACH error, output an XML block exactly like this:\n\n"
                 "<error>\n"
@@ -470,14 +444,10 @@ def node_archivist(state: AgentState) -> ty.Dict:
                 "  <category>Grammar OR Vocabulary OR Spelling</category>\n"
                 "</error>\n\n"
                 "If there are no errors, output: <no_errors/>\n\n"
-                f"Draft: {state['final_response']}"
+                f"Draft: {state['final_response']}")
             )
-        }
     ]
 
-    # # Chain: Prompt -> LLM
-    # chain = prompt | llm_large
-    template = format_chat_template(chat)
     chain = chain = create_compatible_chain(template, llm_large)
     response  = chain.invoke({})
 
@@ -502,7 +472,7 @@ def node_archivist(state: AgentState) -> ty.Dict:
 
     if len(error_list_obj) > 0:
         logger.debug(f"Found {len(error_list)} errors.")
-        add_error_logs(error_list_obj)
+        add_error_logs(error_list_obj, client_embedding_model_server)
     else:
         logger.debug("No errors found.")
     # end if
@@ -524,19 +494,23 @@ def _func_routine_node_rewriter(prompt_content: str, state: AgentState, input_va
     lang_code_diary = state['lang_diary_body']
     lang_name_natural_lan: str = Iso693_code2natural_name[lang_code_diary]
 
-    chat = [
-        {
-            "role": "system",
-            "content": f"You are an expert {lang_name_natural_lan} editor."
+    # chat = [
+    #     {
+    #         "role": "system",
+    #         "content": f"You are an expert {lang_name_natural_lan} editor."
 
-        },
-        {
-            "role": "user", 
-            "content": prompt_content
-        }
+    #     },
+    #     {
+    #         "role": "user", 
+    #         "content": prompt_content
+    #     }
+    # ]
+
+    template = [
+        ("system", f"You are an expert {lang_name_natural_lan} editor."),
+        ("user", prompt_content)
     ]
-
-    chain = create_compatible_chain(chat, llm_large)
+    chain = create_compatible_chain(template, llm_large)
 
     response  = chain.invoke({
         "user_text": state['final_response'], 
@@ -593,7 +567,7 @@ def node_rewriter(state: AgentState, max_try: int = 5) -> ty.Dict:
 
         if _flag is False:
             # case: XML does not exist.
-            logger.warning(f"failed to extract XML. retry.")
+            logger.warning("failed to extract XML. retry.")
             _msg_addition = "IMPORTANT: Return the result ONLY as XML in the following structure:\n<rewriting>rewritten text</rewriting>\n"
             prompt_content += _msg_addition
             _current_try += 1
@@ -629,14 +603,36 @@ def node_reviewer(state: AgentState) -> ty.Dict:
         return {}
     # end if
     
-    chat = [
-        {
-            "role": "system", 
-            "content": 'You are a "Memory Coach" for a language learner. Your goal is to analyze the user CURRENT MISTAKES and compare them against their ERROR HISTORY.'
-        },
-        {
-            "role": "user",
-            "content": (
+    # chat = [
+    #     {
+    #         "role": "system", 
+    #         "content": 'You are a "Memory Coach" for a language learner. Your goal is to analyze the user CURRENT MISTAKES and compare them against their ERROR HISTORY.'
+    #     },
+    #     {
+    #         "role": "user",
+    #         "content": (
+    #             "1. **Current Mistakes:** A list of errors found in the user's latest diary entry.\n"
+    #             "2. **Error History:** A list of similar errors the user made in the past (retrieved from database). \n"
+    #             "### INSTRUCTIONS\n"
+    #             'Step 1: Compare the "Current Mistakes" with the "Error History".\n'
+    #             'Step 2: Classify the situation into one of two categories:\n'
+    #             '   - **"RECURRING"**: The user made a mistake similar to one in history (e.g., gender agreement again, same vocabulary word).\n'
+    #             '   - **"NEW"**: These are fresh mistakes not seen in the provided history.\n'
+    #             'Step 3: Generate a short, helpful message.\n'
+    #             '   - If RECURRING: Be firm but encouraging. Remind them of the specific rule they forgot.\n'
+    #             '   - If NEW: Be gentle. Explain the new concept briefly.\n'
+    #             '   - The user\'s target learning level is {level_rewriting}\n'
+    #             "IMPORTANT: Return the result ONLY as XML in the following structure:\n"
+    #             "<review>review contents</review>\n\n"
+    #             "Current Mistakes: {current_mistakes}\n"
+    #             "Error History: {error_history}\n"
+    #             "Vocabularies that user does not know: {unkown_expressions}"
+    #         )
+    #     }
+    # ]
+    template = [
+        ("system", 'You are a "Memory Coach" for a language learner. Your goal is to analyze the user CURRENT MISTAKES and compare them against their ERROR HISTORY.'),
+        ("user", (
                 "1. **Current Mistakes:** A list of errors found in the user's latest diary entry.\n"
                 "2. **Error History:** A list of similar errors the user made in the past (retrieved from database). \n"
                 "### INSTRUCTIONS\n"
@@ -654,14 +650,9 @@ def node_reviewer(state: AgentState) -> ty.Dict:
                 "Error History: {error_history}\n"
                 "Vocabularies that user does not know: {unkown_expressions}"
             )
-        }
+        )
     ]
-
-    # template = format_chat_template(chat)
-    # prompt = PromptTemplate(template=template, input_variables=[])
     # # Chain: Prompt -> LLM
-    # chain = prompt | llm_large
-    template = format_chat_template(chat)
     chain = create_compatible_chain(template, llm_large)
 
     response  = chain.invoke({

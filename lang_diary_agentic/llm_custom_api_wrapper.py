@@ -11,6 +11,34 @@ logger = logging.getLogger(__name__)
 
 
 
+
+
+class CustomEmbeddingModelServer:
+    def __init__(self, api_url: str) -> None:
+        self.api_url = api_url
+    
+
+    def check_connection(self) -> bool:
+        try:
+            response = requests.get(f"{self.api_url}/alive")
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            return False
+
+    def get_remote_embedding(self, text: str) -> list[float]:
+        response = requests.post(
+            f"{self.api_url}/embedding", 
+            json={"text": text}
+        )
+        response.raise_for_status()
+        return response.json()["embedding"]
+
+
+    def __call__(self, *args: Any, **kwds: Any) -> Any:
+        pass
+
+
 class CustomHFServerLLM(LLM):
     api_url: str
     
