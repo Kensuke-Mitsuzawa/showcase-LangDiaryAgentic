@@ -35,14 +35,14 @@ class RemoteServerEmbeddings(Embeddings):
         # This function is used when you call vector_store.add_texts()
         embeddings = []
         for text in texts:
-            response = requests.post(self.api_url, json={"text": text})
+            response = requests.post(f"{self.api_url}/embedding", json={"text": text})
             response.raise_for_status()
             embeddings.append(response.json()["embedding"])
         return embeddings
 
     def embed_query(self, text: str) -> list[float]:
         # This function is used when you call vector_store.similarity_search()
-        response = requests.post(self.api_url, json={"text": text})
+        response = requests.post(f"{self.api_url}/embedding", json={"text": text})
         response.raise_for_status()
         return response.json()["embedding"]
 

@@ -8,18 +8,15 @@ import typing as ty
 from typing import TypedDict
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from langchain_core.prompts.chat import SystemMessagePromptTemplate, HumanMessagePromptTemplate, AIMessagePromptTemplate
-from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import StateGraph, END
 from langchain_core.language_models import BaseLanguageModel
 from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 # from langdetect import detect
 
 from .utils import check_language
 from .llm_custom_api_wrapper import CustomHFServerLLM, RemoteServerEmbeddings
-from .vector_store import query_past_errors, add_error_logs
+from .vector_store import add_error_logs
 from .logging_configs import apply_logging_suppressions
 from .models.vector_store_entry import ErrorRecord
 from .db_handler import HandlerDairyDB, UnknownExpressionEntry, DiaryEntry
@@ -253,30 +250,30 @@ def __extract_xml_errors_node_processor(text: str, is_skip_1st_error_tag: bool =
 
     # 1. Find all content inside <error>...</error> tags
     # re.DOTALL allows the dot (.) to match newlines
-    seq_translations = re.findall(r'<translations>(.*?)</translations>', text, re.DOTALL)
+    # seq_translations = re.findall(r'<translations>(.*?)</translations>', text, re.DOTALL)
+    seq_translations = re.findall(r'<bracket>(.*?)</bracket>[\s\n]?+<translation>(.*?)</translation>', text, re.DOTALL)
 
     if is_skip_1st_error_tag and len(seq_translations) == 1:
         return []
     # end if
 
     if is_skip_1st_error_tag:
-        translation_text_source = seq_translations[1]
+        seq_candaidate = seq_translations[1:]
     else:
-        translation_text_source = text
+        seq_candaidate = seq_translations
     # end if
 
-    seq_xml_container = re.findall(r'<bracket>(.*?)</bracket>[\s\n]+<translation>(.*?)</translation>', translation_text_source, re.DOTALL)
-    for _i_block, block in enumerate(seq_xml_container):
-        # the block should be (original, translation)
+    for _i_block, block in enumerate(seq_candaidate):
         if len(block) != 2:
             continue
         # end if
-        
+
         errors.append({
-            "expression_original": block[0],
+            "expression_original": block[0].replace('[', '').replace(']', '').strip(),
             "expression_translation": block[1]
         })
     # end for
+
     return errors
 
 
@@ -299,7 +296,7 @@ def node_translator(state: AgentState) -> ty.Dict:
     # end if
 
     xml_schema = """
-        <translations>\n"<bracket>bracketed [text]</bracket><translation>corresponding translation</translation></translations>
+        <bracket>[text]</bracket><translation>corresponding translation</translation>
     """
 
     user_content = (
@@ -315,7 +312,7 @@ def node_translator(state: AgentState) -> ty.Dict:
         ("system", f"You are a translator from {lang_annotation_natural_name} to {lang_diary_body_natural_name}."),
         ("user", user_content)
     ]
-    chain = create_compatible_chain(template, llm_large.bind(max_tokens=500, enable_thinking=False))
+    chain = create_compatible_chain(template, llm_large.bind(max_tokens=512, enable_thinking=False))
     response = chain.invoke({
         "unkown_expressions": json.dumps(state['unkown_expressions']), 
         "lang_annotation": lang_annotation,

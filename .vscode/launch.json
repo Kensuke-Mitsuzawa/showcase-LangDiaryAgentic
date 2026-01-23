@@ -16,6 +16,15 @@
             ],
             "console": "integratedTerminal",
             "justMyCode": true
-        }
+        },
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "/workdir/kmitsuzawa/codes/lang_diary_agentic/lang_diary_agentic/models",
+        }        
     ]
 }
