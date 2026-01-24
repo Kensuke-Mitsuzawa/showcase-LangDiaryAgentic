@@ -419,11 +419,14 @@ def node_translator(state: AgentState) -> ty.Dict:
     # record position before the replacement
     regex_position_original = []
     for _d_pair in seq_translations:
-        _regex_pattern = _d_pair["expression_original"].replace('[', '').replace(']', '')
+        _regex_pattern = _d_pair["expression_original"].replace('[', '').replace(']', '').replace(' ', '\\s')
         regex_position_original += [(_d_pair, _o) for _o in re.finditer(f'{_regex_pattern}', draft_text, re.DOTALL)]
     # end for
     if len(seq_translations) != len(regex_position_original):
-        breakpoint()
+        logger.error(f"Fail to extract the XML tag. Check the LLM's response: {clean_response}")
+        return {"final_response": "", "is_processor_success": False, "translation_pair_extracted": []}
+    # end if
+
     assert len(seq_translations) == len(regex_position_original), f"Invalid extraction {seq_translations}, {regex_position_original}"
 
     # replacement
@@ -608,7 +611,6 @@ def _func_routine_node_rewriter(prompt_content: str, state: AgentState) -> ty.Tu
     group_replaced = re.findall(r'<rewriting>(.*?)</rewriting>', response_text, re.DOTALL)
         
     if group_replaced == []:
-        breakpoint()
         logger.warning(f"Regex error. Return the full response. Response={response_text}")
 
         return response_text, response_text, 'xml_error'
@@ -619,7 +621,6 @@ def _func_routine_node_rewriter(prompt_content: str, state: AgentState) -> ty.Tu
         _detected_language = check_language.detect_language(text_rewriting)
 
         if _detected_language != lang_code_diary:
-            breakpoint()
             logger.warning(f"Unmatched Language code. Expected code={lang_code_diary}, Rewriting-text={_detected_language}. Retry.")
             return response_text, response_text, 'incorrect_language'
         else:
