@@ -3,6 +3,7 @@ import json
 import re
 import copy
 from datetime import date, datetime
+from pydantic import BaseModel, Field
 
 import typing as ty
 from typing import TypedDict
@@ -15,7 +16,12 @@ from langchain_openai import ChatOpenAI
 # from langdetect import detect
 
 from .utils import check_language
-from .llm_custom_api_wrapper import CustomHFServerLLM, RemoteServerEmbeddings
+from .clients import (
+    CustomOllamaEmbeddings,
+    CustomHFServerEmbeddings,
+    CustomHFServerLLM,
+    CustomOllamaServerLLM
+)
 from .vector_store import add_error_logs
 from .logging_configs import apply_logging_suppressions
 from .models.vector_store_entry import ErrorRecord
@@ -35,15 +41,29 @@ apply_logging_suppressions()
 logger = logging.getLogger(__name__)
 
 
+
+class TaskParameterConfig(BaseModel):
+    is_execute: bool = True
+    max_tokens: int = 512
+    enable_thinking: bool = False
+
+
+class TranslationReplacementInformation(BaseModel):
+    expression_original: str
+    expression_translation: str
+    span_original: ty.Tuple[int, int]
+    span_translation: ty.Tuple[int, int]
+
+
 # --- Define State dictionary ---
 class AgentState(TypedDict):
     draft_text: str
     retrieved_context: str
     final_response: str
     suggestion_response: str
-    # new_errors: str
-    unkown_expressions: ty.List[ty.Dict[str, str]]
+    unkown_expressions: ty.List[str]
     total_review: str
+    translation_pair_extracted: ty.List[TranslationReplacementInformation]
     grammatical_errors_extracted: ty.List[ErrorRecord]
     # meta-information
     lang_annotation: ty.Optional[str]
@@ -56,81 +76,107 @@ class AgentState(TypedDict):
     # signal to convey the task status
     is_processor_success: bool
     is_archivist_success: bool
+    # task config
+    config_translator: TaskParameterConfig
+    config_archivist: TaskParameterConfig
+    config_rewriter: TaskParameterConfig
+    config_reviewer: TaskParameterConfig
+
 
 
 # ---- API-setups ----
 
 
-def server_llm() -> CustomHFServerLLM:
+def server_custom_hf() -> ty.Tuple[CustomHFServerLLM, CustomHFServerEmbeddings]:
     """Helper to load a model pipeline"""
     # Initialize your custom connection
     assert settings.Server_API_Endpoint is not None
     llm = CustomHFServerLLM(api_url=settings.Server_API_Endpoint)
-    
+    embedding = CustomHFServerEmbeddings(api_url=settings.Server_API_Endpoint)
     if llm.check_connection() is False:
         raise RuntimeError(f"The server is not available at {settings.Server_API_Endpoint}.")
     # end if
+    if embedding.check_connection() is False:
+        raise RuntimeError(f"The server is not available at {settings.Server_API_Endpoint}.")        
+    # end if
+    return llm, embedding
 
-    return llm
+def server_ollama() -> ty.Tuple[CustomOllamaServerLLM, CustomOllamaEmbeddings]:
+    # Initialize your custom connection
+    assert settings.Server_API_Endpoint is not None
+    llm = CustomOllamaServerLLM(api_url=settings.Server_API_Endpoint)
+    embedding = CustomOllamaEmbeddings(settings.Server_API_Endpoint)
+    if llm.check_connection() is False:
+        raise RuntimeError(f"The server is not available at {settings.Server_API_Endpoint}.")
+    # end if
+    if embedding.check_connection() is False:
+        raise RuntimeError(f"The server is not available at {settings.Server_API_Endpoint}.")        
+    # end if
+    return llm, embedding
 
 
-def cloud_llm(
-    api_key: str, 
-    model_name: ty.Optional[str] = None,
-    provider: PossibleCloudLLMProvider = "openai", 
-    temperature: float = 0.7
-) -> BaseLanguageModel:
-    """
-    Factory function to return a Cloud-based LLM (OpenAI/Gemini).
+
+# def cloud_llm(
+#     api_key: str, 
+#     model_name: ty.Optional[str] = None,
+#     provider: PossibleCloudLLMProvider = "openai", 
+#     temperature: float = 0.7
+# ) -> BaseLanguageModel:
+#     """
+#     Factory function to return a Cloud-based LLM (OpenAI/Gemini).
     
-    Args:
-        provider: "openai" or "google"
-        api_key: The secret token (defaults to env vars OPENAI_API_KEY or GOOGLE_API_KEY)
-        model_name: Specific model (e.g. "gpt-4o", "gemini-pro")
-        temperature: Creativity parameter
-    """
+#     Args:
+#         provider: "openai" or "google"
+#         api_key: The secret token (defaults to env vars OPENAI_API_KEY or GOOGLE_API_KEY)
+#         model_name: Specific model (e.g. "gpt-4o", "gemini-pro")
+#         temperature: Creativity parameter
+#     """
     
-    # 1. OpenAI Implementation
-    if provider.lower() == "openai":
-        # Uses OPENAI_API_KEY environment variable by default if api_key is None
-        llm = ChatOpenAI(
-            api_key=api_key,
-            model=model_name or "gpt-4o",
-            temperature=temperature,
-            max_retries=2,
-            # 'streaming=True' is often preferred for cloud APIs
-            streaming=True 
-        )
-        return llm
+#     # 1. OpenAI Implementation
+#     if provider.lower() == "openai":
+#         # Uses OPENAI_API_KEY environment variable by default if api_key is None
+#         llm = ChatOpenAI(
+#             api_key=api_key,
+#             model=model_name or "gpt-4o",
+#             temperature=temperature,
+#             max_retries=2,
+#             # 'streaming=True' is often preferred for cloud APIs
+#             streaming=True 
+#         )
+#         return llm
 
-    # 2. Google Gemini Implementation
-    elif provider.lower() == "google":
-        raise NotImplementedError()
-        # # Uses GOOGLE_API_KEY environment variable by default if api_key is None
-        # llm = ChatGoogleGenerativeAI(
-        #     google_api_key=api_key,
-        #     model=model_name or "gemini-1.5-flash",
-        #     temperature=temperature,
-        #     convert_system_message_to_human=True # Helps with older Gemini quirks
-        # )
-        # return llm
-    else:
-        raise ValueError(f"Unsupported provider: {provider}")
+#     # 2. Google Gemini Implementation
+#     elif provider.lower() == "google":
+#         raise NotImplementedError()
+#         # # Uses GOOGLE_API_KEY environment variable by default if api_key is None
+#         # llm = ChatGoogleGenerativeAI(
+#         #     google_api_key=api_key,
+#         #     model=model_name or "gemini-1.5-flash",
+#         #     temperature=temperature,
+#         #     convert_system_message_to_human=True # Helps with older Gemini quirks
+#         # )
+#         # return llm
+#     else:
+#         raise ValueError(f"Unsupported provider: {provider}")
 
 
 if settings.Mode_Deployment == "cloud_api":
+    raise NotImplementedError()
     assert settings.Cloud_API_Token is not None
     llm_large = cloud_llm(api_key=settings.Cloud_API_Token, model_name=settings.MODEL_NAME_Primary)
     tokenizer = None
-elif settings.Mode_Deployment == "server":
+elif settings.Mode_Deployment == "server_custom_hf":
     logger.info(f"connecting to the API endpoint: {settings.Server_API_Endpoint}")
-    llm_large = server_llm()
+    llm_large, client_embedding_model_server = server_custom_hf()
+    logger.info("API is ready.")
+elif settings.Mode_Deployment == "server_ollama":
+    logger.info(f"connecting to the API endpoint: {settings.Server_API_Endpoint}")
+    llm_large, client_embedding_model_server = server_ollama()
     logger.info("API is ready.")
 else:
     raise ValueError(f"Invalid Mode_Deployment: {settings.Mode_Deployment}")
 # end if
 
-client_embedding_model_server = RemoteServerEmbeddings(api_url=settings.Server_API_Endpoint)
 
 # ---- END: API-setups ----
 
@@ -142,25 +188,27 @@ def create_compatible_chain(formatted_input: ty.List[ty.Tuple],
     """
     Dynamically builds the chain based on whether input is String or List.
     """
-    if settings.Mode_Deployment == "server":
+    if settings.Mode_Deployment in ("server_custom_hf", "server_ollama"):
         # # 1. Local Model Path (String Input)
         prompt = ChatPromptTemplate.from_messages(formatted_input)
 
     elif settings.Mode_Deployment == "cloud_api":
+        raise NotImplementedError()
         # 2. API Path (List Input)
         # We must convert dicts -> LangChain Message Objects
-        messages = []
-        for msg in formatted_input:
-            if msg['role'] == 'user':
-                messages.append(HumanMessage(content=msg['content']))
-            elif msg['role'] == 'system':
-                messages.append(SystemMessage(content=msg['content']))
-            elif msg['role'] == 'assistant':
-                messages.append(AIMessage(content=msg['content']))
+        # messages = []
+        # for msg in formatted_input:
+        #     if msg['role'] == 'user':
+        #         messages.append(HumanMessage(content=msg['content']))
+        #     elif msg['role'] == 'system':
+        #         messages.append(SystemMessage(content=msg['content']))
+        #     elif msg['role'] == 'assistant':
+        #         messages.append(AIMessage(content=msg['content']))
         
         # Create a ChatPromptTemplate from these messages
-        prompt = ChatPromptTemplate.from_messages(messages)
-
+        # prompt = ChatPromptTemplate.from_messages(messages)
+    # end if
+    
     # Build and return the chain
     # Note: We invoke with empty dict {} because the prompt is already fully populated
     chain = prompt | llm
@@ -169,11 +217,59 @@ def create_compatible_chain(formatted_input: ty.List[ty.Tuple],
 
 # --- Define Nodes ---
 
+
 def node_validation(state: AgentState):
     level_rewriting = state.get("level_rewriting")
     assert level_rewriting is not None
     assert level_rewriting in ty.get_args(PossibleLevelRewriting)
     
+
+def node_set_metadata(state: AgentState):
+    # set the meta-info first
+    diary_date = state.get("date_diary", str(date.today()))
+    created_at = datetime.now()
+    datetime_str = created_at.isoformat()
+    primary_id_DiaryEntry = f"{diary_date}_{datetime_str}"
+
+    if state["title_diary"] is None:
+        title_diary = ""
+    else:
+        title_diary = state["title_diary"]
+    # end if
+
+    return {
+        "title_diary": title_diary,
+        "primary_id_DiaryEntry": primary_id_DiaryEntry,
+        "diary_date": diary_date,
+        "created_at": created_at
+    }
+    
+
+def node_dynamic_parameter_adjustment(state: AgentState):
+    """Optimizing the parameter depending on the user's input parameter.
+    
+    Rule one: + 512 words to the input diary length.
+    Rule two: if enable_think=True, double the max token length.
+    """
+    target_fields = ["config_translator", "config_archivist", "config_rewriter", "config_reviewer"]
+
+    diary_length = len(state["draft_text"])
+
+    dict_updated_config = {}
+    for _filed_name in target_fields:
+        _config_obj: TaskParameterConfig = state[_filed_name]
+        
+        _new_length = diary_length + 512
+        if _config_obj.enable_thinking is True:
+            _new_length = _new_length * 2
+        # end if
+
+        _config_obj.max_tokens = _new_length
+        dict_updated_config[_filed_name] = _config_obj
+    # end for
+
+    return dict_updated_config
+
 
 def node_language_detect(state: AgentState):
     """
@@ -187,8 +283,8 @@ def node_language_detect(state: AgentState):
     
     # If user already provided them via UI, skip detection
     if state.get("lang_annotation") and state.get("lang_diary_body"):
-        _language_diary = state.get("lang_diary_body").strip()
-        _language_annotation = state.get("lang_annotation").strip()
+        _language_diary = state.get("lang_diary_body").strip()  # type: ignore
+        _language_annotation = state.get("lang_annotation").strip()  # type: ignore
 
         assert _language_diary in Languages_Code, f"The language code {_language_diary} is not valid. Check the language code in ISO 693-3."
         assert _language_annotation in Languages_Code, f"The language code {_language_annotation} is not valid. Check the language code in ISO 693-3."
@@ -219,7 +315,9 @@ def node_language_detect(state: AgentState):
 
 
 
-def __extract_xml_errors_node_processor(text: str, is_skip_1st_error_tag: bool = True):
+def __extract_xml_errors_node_processor(text: str, 
+                                        expected_extractions: ty.List[str], 
+                                        is_skip_1st_error_tag: bool = True):
     """
     Parses multiple <error> blocks from the text.
     Returns a list of dicts: [{'rule': '...', 'phrase': '...', ...}, {...}]
@@ -235,6 +333,10 @@ def __extract_xml_errors_node_processor(text: str, is_skip_1st_error_tag: bool =
     # re.DOTALL allows the dot (.) to match newlines
     # seq_translations = re.findall(r'<translations>(.*?)</translations>', text, re.DOTALL)
     seq_translations = re.findall(r'<bracket>(.*?)</bracket>[\s\n]?+<translation>(.*?)</translation>', text, re.DOTALL)
+
+    if len(expected_extractions) == len(seq_translations):
+       is_skip_1st_error_tag = False 
+    # end if
 
     if is_skip_1st_error_tag and len(seq_translations) == 1:
         return []
@@ -252,7 +354,7 @@ def __extract_xml_errors_node_processor(text: str, is_skip_1st_error_tag: bool =
         # end if
 
         errors.append({
-            "expression_original": block[0].replace('[', '').replace(']', '').strip(),
+            "expression_original": block[0].strip(),
             "expression_translation": block[1]
         })
     # end for
@@ -264,8 +366,11 @@ def node_translator(state: AgentState) -> ty.Dict:
     """Node 2: Coach"""
     logging.info("--- Node: translator ---")
 
+    assert state["config_translator"].is_execute is True, "is_execute must be set True."
+    tast_config = state["config_translator"]
+
     is_processor_success = True
-    
+
     sub_phrase_language_pair: str = ""
     lang_annotation = state["lang_annotation"]
     lang_diary_body = state["lang_diary_body"]
@@ -295,7 +400,8 @@ def node_translator(state: AgentState) -> ty.Dict:
         ("system", f"You are a translator from {lang_annotation_natural_name} to {lang_diary_body_natural_name}."),
         ("user", user_content)
     ]
-    chain = create_compatible_chain(template, llm_large.bind(max_tokens=512, enable_thinking=False))
+
+    chain = create_compatible_chain(template, llm_large.bind(max_tokens=tast_config.max_tokens, enable_thinking=tast_config.enable_thinking))
     response = chain.invoke({
         "unkown_expressions": json.dumps(state['unkown_expressions']), 
         "lang_annotation": lang_annotation,
@@ -303,19 +409,51 @@ def node_translator(state: AgentState) -> ty.Dict:
 
     # Simple cleanup to remove the prompt from the output if the model echos it
     clean_response = response.content.split("<|assistant|>")[-1]
-    seq_translations = __extract_xml_errors_node_processor(clean_response)
+    
+    seq_translations = __extract_xml_errors_node_processor(clean_response, expected_extractions=state['unkown_expressions'])
 
-    # replace the bracketed [text] one-by-one
+    # ---- replace the bracketed [text] one-by-one ----
+    # rule: memory the string position of the target word.
     draft_text = copy.deepcopy(state['draft_text'])
-    for _translation_obj in seq_translations:
-        draft_text = draft_text.replace(_translation_obj['expression_original'], _translation_obj['expression_translation'])
+
+    # record position before the replacement
+    regex_position_original = []
+    for _d_pair in seq_translations:
+        _regex_pattern = _d_pair["expression_original"].replace('[', '\\[').replace(']', '\\]')
+        regex_position_original += [(_d_pair, _o) for _o in re.finditer(f'{_regex_pattern}', draft_text, re.DOTALL)]
+    # end for
+    assert len(seq_translations) == len(regex_position_original), f"Invalid extraction {seq_translations}, {regex_position_original}"
+
+    # replacement
+    _t_regex: ty.Tuple[ty.Dict, re.Match]
+    for _t_regex in regex_position_original:
+        draft_text = draft_text.replace(_t_regex[0]['expression_original'], _t_regex[0]['expression_translation'])
     # end for
 
-    logger.debug(f"Correction: {draft_text}")
+    # record position after the replacement
+    regex_position_replacement = []
+    for _d_pair in seq_translations:
+        regex_position_replacement += [(_d_pair, _o) for _o in re.finditer(f'{_d_pair["expression_translation"]}', draft_text, re.DOTALL)]
+    # end for
+    assert len(seq_translations) == len(regex_position_replacement), f"Invalid extraction {seq_translations}, {regex_position_replacement}"
+    
+    # merge two `regex_position_original` and `regex_position_replacement`
+    seq_replacement_before_after = []
+    for _i_regex, _d_pair in enumerate(seq_translations):
+        _position_before =  regex_position_original[_i_regex][1].span()
+        _position_after = regex_position_replacement[_i_regex][1].span()
+        seq_replacement_before_after.append(TranslationReplacementInformation(
+            expression_original=_d_pair['expression_original'],
+            expression_translation=_d_pair['expression_translation'],
+            span_original=_position_before,
+            span_translation=_position_after))
+    # end for
+    # ---- replace the bracketed [text] one-by-one ---- 
+    logger.debug(f"After translation: {draft_text}")
     return {
         "final_response": draft_text,
         "is_processor_success": is_processor_success,
-        "unkown_expressions": seq_translations
+        "translation_pair_extracted": seq_replacement_before_after
     }
 
 
@@ -366,20 +504,11 @@ def __extract_xml_errors_node_archivist(text: str, is_skip_1st_error_tag: bool =
 def node_archivist(state: AgentState) -> ty.Dict:
     """Node 3: Archivist"""
     logging.info("--- Node: Archive ---")
-
-    # set the meta-info first
-    diary_date = state.get("date_diary", str(date.today()))
-    created_at = datetime.now()
-    datetime_str = created_at.isoformat()
-    primary_id_DiaryEntry = f"{diary_date}_{datetime_str}"
+    tast_config = state["config_archivist"]
 
     # do nothing if `is_processor_success` is False
     if not state["is_processor_success"]:
-        return {
-        "primary_id_DiaryEntry": primary_id_DiaryEntry,
-        "diary_date": diary_date,
-        "created_at": created_at
-    }
+        return {}
     # end if
 
     lang_diary_body = state['lang_diary_body']
@@ -401,16 +530,17 @@ def node_archivist(state: AgentState) -> ty.Dict:
             )
     ]
 
-    chain = chain = create_compatible_chain(template, llm_large.bind(max_tokens=1024, enable_thinking=True))
+    chain = chain = create_compatible_chain(template, llm_large.bind(max_tokens=tast_config.max_tokens, 
+                                                                     enable_thinking=tast_config.enable_thinking))
     response  = chain.invoke({})
 
     # Extract List using Regex
-    error_list = __extract_xml_errors_node_archivist(response.content)
+    error_list = __extract_xml_errors_node_archivist(response.content)  # type: ignore
     # Save to DB (Loop through found errors)
     __error_list_obj = []
     for err in error_list:
         # Create your Pydantic object or Dict here
-        err['primary_id_DiaryEntry'] = primary_id_DiaryEntry
+        err['primary_id_DiaryEntry'] = state["primary_id_DiaryEntry"]
         err['language_diary_text'] = state['lang_diary_body']
         err['language_annotation_text'] = state['lang_annotation']
         err['model_id_embedding'] = settings.MODEL_NAME_Embedding
@@ -442,18 +572,17 @@ def node_archivist(state: AgentState) -> ty.Dict:
     
     return {
         "grammatical_errors_extracted": error_list, 
-        "primary_id_DiaryEntry": primary_id_DiaryEntry,
-        "diary_date": diary_date,
-        "created_at": created_at
     }
 
 
 PossibleReturnRoutineNodeRewriter = ty.Literal['success', 'insufficient_length', 'incorrect_language', 'xml_error']
-def _func_routine_node_rewriter(prompt_content: str, state: AgentState, default_max_length: int) -> ty.Tuple[str, str, str]:
+def _func_routine_node_rewriter(prompt_content: str, state: AgentState) -> ty.Tuple[str, str, str]:
     """
     
     Return: (rewritten-text, full-response, error-code).
     """
+    tast_config = state["config_rewriter"]
+
     lang_code_diary = state['lang_diary_body']
     lang_name_natural_lan: str = Iso693_code2natural_name[lang_code_diary]
 
@@ -461,7 +590,9 @@ def _func_routine_node_rewriter(prompt_content: str, state: AgentState, default_
         ("system", f"You are an expert {lang_name_natural_lan} editor."),
         ("user", prompt_content)
     ]
-    chain = create_compatible_chain(template, llm_large.bind(max_length=default_max_length, enable_thinking=False))
+    chain = create_compatible_chain(template, llm_large.bind(
+        max_length=tast_config.max_tokens, 
+        enable_thinking=tast_config.enable_thinking))
 
     response  = chain.invoke({
         "user_text": state['final_response'], 
@@ -471,10 +602,11 @@ def _func_routine_node_rewriter(prompt_content: str, state: AgentState, default_
 
     logger.info(f"Rewriter response: {response}")
     logger.debug(f"dialy-lang={state['lang_diary_body']}. Level-rewiritng={state['level_rewriting']}")
-    response_text: str = response.content
+    response_text: str = response.content  # type: ignore
     group_replaced = re.findall(r'<rewriting>(.*?)</rewriting>', response_text, re.DOTALL)
         
     if group_replaced == []:
+        breakpoint()
         logger.warning(f"Regex error. Return the full response. Response={response_text}")
 
         return response_text, response_text, 'xml_error'
@@ -485,6 +617,7 @@ def _func_routine_node_rewriter(prompt_content: str, state: AgentState, default_
         _detected_language = check_language.detect_language(text_rewriting)
 
         if _detected_language != lang_code_diary:
+            breakpoint()
             logger.warning(f"Unmatched Language code. Expected code={lang_code_diary}, Rewriting-text={_detected_language}. Retry.")
             return response_text, response_text, 'incorrect_language'
         else:
@@ -499,9 +632,14 @@ def _func_routine_node_rewriter(prompt_content: str, state: AgentState, default_
 def node_rewriter(state: AgentState, max_try: int = 5, default_max_length: int = 512) -> ty.Dict:
     """Node: Rewritting"""
     logging.info("--- Node: Rewriting ---")
+    task_config = state["config_rewriter"]
 
     # do nothing if `is_processor_success` is False
     if not state["is_processor_success"]:
+        return {}
+    # end if
+    if task_config.is_execute is False:
+        logger.info("SKip the tast since is_execute = False.")
         return {}
     # end if
     
@@ -524,7 +662,7 @@ def node_rewriter(state: AgentState, max_try: int = 5, default_max_length: int =
             break
         # end if
 
-        _response_rewriting, _full_response, _flag_error = _func_routine_node_rewriter(prompt_content, state, default_max_length)
+        _response_rewriting, _full_response, _flag_error = _func_routine_node_rewriter(prompt_content, state)
 
         if _flag_error == 'xml_error':
             # case: XML does not exist.
@@ -557,10 +695,20 @@ def node_rewriter(state: AgentState, max_try: int = 5, default_max_length: int =
 def node_reviewer(state: AgentState) -> ty.Dict:
     """Node: Reviewer"""
     logging.info("--- Node: Reviewer ---")
+    task_config = state["config_reviewer"]
+
+    if task_config.is_execute is False:
+        logger.info("SKip the task since is_execute is False.")
+        return {
+            "total_review": ""
+        }
+    # end if
 
     # do nothing if `is_processor_success` is False
     if not state["is_processor_success"]:
-        return {}
+        return {
+            "total_review": ""
+        }
     # end if
     
 
@@ -596,7 +744,7 @@ def node_reviewer(state: AgentState) -> ty.Dict:
         "unkown_expressions": state['unkown_expressions']
     })
 
-    response_text: str = response.content
+    response_text: str = response.content  # type: ignore
     group_replaced = re.findall(r'<review>(.*?)</review>', response_text, re.DOTALL)
     if group_replaced == []:
         logger.warning(f"Regex error. Return the full response. Response={response}")
@@ -643,11 +791,14 @@ def node_save_duckdb(state: AgentState):
     assert diary_entry_primary_key is not None
 
     seq_unknown_expression_entry = []
-    seq_bracket_text = state['unkown_expressions']
+    seq_bracket_text = state['translation_pair_extracted']
+    _d_expression: TranslationReplacementInformation
     for _d_expression in seq_bracket_text:
         _unknown_expression_entry = UnknownExpressionEntry(
-            expression=_d_expression['expression_original'],
-            expression_translation=_d_expression['expression_translation'],
+            expression=_d_expression.expression_original,
+            expression_translation=_d_expression.expression_translation,
+            span_original=_d_expression.span_original,
+            span_translation=_d_expression.span_translation,
             language_source=language_source,
             language_annotation=language_annotation,
             created_at=created_at,
@@ -671,7 +822,9 @@ def node_save_duckdb(state: AgentState):
 def init_graph():
     # --- 4. Build Graph ---
     workflow = StateGraph(AgentState)
+    workflow.add_node("meta_data", node_set_metadata)
     workflow.add_node("validator", node_validation)
+    workflow.add_node("adjuster_parameter", node_dynamic_parameter_adjustment)
     workflow.add_node("detector", node_language_detect)
     workflow.add_node("translator", node_translator)
     workflow.add_node("archivist", node_archivist)
@@ -680,7 +833,9 @@ def init_graph():
     workflow.add_node("db_saver", node_save_duckdb)
 
     workflow.set_entry_point("validator")
-    workflow.add_edge("validator", "detector")    
+    workflow.add_edge("validator", "meta_data")
+    workflow.add_edge("meta_data", "adjuster_parameter")    
+    workflow.add_edge("adjuster_parameter", "detector")    
     workflow.add_edge("detector", "translator")
     workflow.add_edge("translator", "archivist")
     workflow.add_edge("archivist", "rewriter")

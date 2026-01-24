@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # Define variables with types and default values
     APP_NAME: str = "LinguaLog"
 
-    Mode_Deployment: static.PossibleChoiceModeDeployment = "server"
+    Mode_Deployment: static.PossibleChoiceModeDeployment = "server_custom_hf"
     Server_API_Endpoint: ty.Optional[str] = None
     Cloud_API_Token: ty.Optional[str] = None
 
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
         if self.Mode_Deployment == 'cloud_api':
             assert self.Cloud_API_Token is not None, "`Cloud_API_Token` must be give."
-        elif self.Mode_Deployment == 'server':
+        elif self.Mode_Deployment in ('server_custom_hf', 'server_ollama'):
             assert self.Server_API_Endpoint is not None, "`Server_API_Endpoint` must be give."
 # end if
 

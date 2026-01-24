@@ -1,17 +1,18 @@
 import os
 import logging
-from typing import List
+from typing import List, Union
 
 from langchain_chroma import Chroma
 
-from .llm_custom_api_wrapper import RemoteServerEmbeddings
+from .clients import CustomOllamaEmbeddings, CustomHFServerEmbeddings
 from .models.vector_store_entry import ErrorRecord
 from .configs import settings
 
 logger = logging.getLogger(__name__)
 
+PossibleEmbeddingHandler = CustomOllamaEmbeddings | CustomHFServerEmbeddings
 
-def get_vector_store(client_embedding_model_server: RemoteServerEmbeddings):
+def get_vector_store(client_embedding_model_server: PossibleEmbeddingHandler):
     # Uses a free, local model (runs fast on CPU)
     # 'all-MiniLM-L6-v2' is the industry standard for lightweight embeddings
     vector_store = Chroma(
@@ -23,7 +24,7 @@ def get_vector_store(client_embedding_model_server: RemoteServerEmbeddings):
 
 
 def add_error_logs(records: List[ErrorRecord],
-                   client_embedding_model_server: RemoteServerEmbeddings):
+                   client_embedding_model_server: PossibleEmbeddingHandler):
     """
     Save a batch of error logs to memory.
     Efficiently inserts multiple records in one DB transaction.
@@ -74,7 +75,7 @@ def query_past_errors(query_text: str,
                       lang_annotation: str,
                       lang_diary_body: str,
                       model_id_embedding: str, 
-                      client_embedding_model_server: RemoteServerEmbeddings,
+                      client_embedding_model_server: PossibleEmbeddingHandler,
                       k: int = 10):
     """
     Args:

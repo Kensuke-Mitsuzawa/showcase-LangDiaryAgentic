@@ -11,6 +11,8 @@ import requests
 import logging
 import json
 
+from .base import ClientEmbeddingModel, ClientLLM
+
 from lang_diary_agentic.logging_configs import apply_logging_suppressions
 apply_logging_suppressions()
 
@@ -19,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 
-class RemoteServerEmbeddings(Embeddings):
+class CustomHFServerEmbeddings(ClientEmbeddingModel, Embeddings):
     def __init__(self, api_url: str):
         self.api_url = api_url
 
@@ -47,7 +49,7 @@ class RemoteServerEmbeddings(Embeddings):
         return response.json()["embedding"]
 
 
-class CustomHFServerLLM(BaseChatModel):
+class CustomHFServerLLM(ClientLLM, BaseChatModel):
     api_url: str
     
     @property
