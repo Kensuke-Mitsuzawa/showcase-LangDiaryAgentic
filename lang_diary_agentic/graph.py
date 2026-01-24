@@ -792,6 +792,7 @@ def node_save_duckdb(state: AgentState):
         level_rewriting=state["level_rewriting"],
         model_id_tutor=settings.MODEL_NAME_Primary,
         title_diary=state["title_diary"],
+        current_version=0
     )
     
     diary_entry_primary_key = diary_entry.primary_id

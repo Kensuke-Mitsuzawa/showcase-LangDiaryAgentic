@@ -15,6 +15,7 @@ from lang_diary_agentic.models.generation_records import UnknownExpressionEntry
 from lang_diary_agentic.module_post_edit import DiaryVersionManager
 from lang_diary_agentic.db_handler import HandlerDairyDB
 from lang_diary_agentic.configs import settings
+from lang_diary_agentic.static import PossibleLevelRewriting
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -144,6 +145,12 @@ def add_expression_logic(diary_id):
     handler.save_unknown_expression(unknown_exp_entry)
     handler.save_diary_version_history(history_record)
     
+    # 
+    db_con = duckdb.connect(DB_PATH)
+    db_con.execute("UPDATE diary_entries SET current_version = ? WHERE primary_id = ?", (history_record.version_to, diary_id))
+    db_con.commit()
+    db_con.close()
+
     # 3. Redirect back to the diary entry view
     return redirect(url_for('diary_detail', diary_id=diary_id))
 
@@ -174,9 +181,9 @@ def update_diary_text(diary_id):
         return redirect(url_for('diary_detail', diary_id=diary_id))
     # end if
 
-    # delete the unknown expression record
+    # 
     db_con = duckdb.connect(DB_PATH)
-    db_con.execute("UPDATE diary_entries SET diary_rewritten = ? WHERE primary_id = ?", (update_rewriting, diary_id))
+    db_con.execute("UPDATE diary_entries SET diary_rewritten = ?, current_version = ? WHERE primary_id = ?", (update_rewriting, history_record.version_to, diary_id))
     db_con.commit()
     db_con.close()
 
@@ -296,7 +303,7 @@ def diary_editor():
         else:
             error = "Please enter some text."
 
-    return render_template('diary_editor.html', result=result, error=error, form=form_data)
+    return render_template('diary_editor.html', result=result, error=error, form=form_data, possible_rewriting_level=ty.get_args(PossibleLevelRewriting))
 
 
 if __name__ == '__main__':

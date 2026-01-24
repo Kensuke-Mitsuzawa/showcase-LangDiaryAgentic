@@ -67,7 +67,14 @@
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Rewriting Level</label>
-                                <input type="text" name="level_rewriting" class="form-control" placeholder="B2" value="{{ form.level_rewriting }}">
+                                <!-- <input type="text" name="level_rewriting" class="form-control" placeholder="B2" value="{{ form.level_rewriting }}"> -->
+                                <input list="level_rewriting" name="level_rewriting" />
+                                <datalist id="level_rewriting">
+                                    {% for _rewriting_level in possible_rewriting_level %}
+                                        <option value="{{ _rewriting_level }}">
+                                    {% endfor %}
+                                </datalist>
+                                </input>
                             </div>
                         </div>
                         
@@ -220,7 +227,10 @@
                     </div>
                 </div>
                 {% endif %}
-
+                
+                <div id="link-editor">
+                    <p><a href="{{ url_for('diary_detail', diary_id=result.primary_id_DiaryEntry) }}">Edit diary entry</a></p>
+                </div>
             </div>
         </div>
     </div>

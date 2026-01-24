@@ -40,6 +40,7 @@ class HandlerDairyDB():
                 changes JSON 
             );
         """)
+        conn.commit()
         conn.close()
 
     def init_table_unknown_expressions(self):
@@ -193,7 +194,10 @@ class HandlerDairyDB():
                 _entry['date_diary'] = _entry['date_diary']
             # end if
 
-            if 'current_version' not in _entry:
+            if _entry['current_version'] not in _entry:
+                _entry['current_version'] = 0
+            # end if
+            if _entry['current_version'] is None:
                 _entry['current_version'] = 0
             # end if
 
