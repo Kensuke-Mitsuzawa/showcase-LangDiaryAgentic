@@ -1,14 +1,18 @@
 import typing as ty
 import logging
 from pathlib import Path
+from datetime import datetime
 import re
+import duckdb
 
-from flask import Flask, render_template, request, abort
+from flask import Flask, render_template, abort, redirect, url_for, request
 
 from lang_diary_agentic.graph import init_graph, TaskParameterConfig
 from lang_diary_agentic.module_fetch_data_viewer import fetch_grammatical_errors
 from lang_diary_agentic.vector_store import get_vector_store
 
+from lang_diary_agentic.models.generation_records import UnknownExpressionEntry
+from lang_diary_agentic.module_post_edit import DiaryVersionManager
 from lang_diary_agentic.db_handler import HandlerDairyDB
 from lang_diary_agentic.configs import settings
 
@@ -71,8 +75,119 @@ def index():
 
 
 # --- VIEW 2: Diary Detail ---
+@app.route('/diary/<diary_id>/<unknown_expression_id>/delete')
+def delete_unknown_expression(diary_id, unknown_expression_id, methods=['GET']):
+    handler = HandlerDairyDB(DB_PATH)
+
+    entries = handler.fetch_dairy_entry_language(daiary_primary_key=diary_id)
+    assert entries is not None
+    current_version = entries[0].current_version
+
+    unknown_expressions = handler.fetch_unknown_expression(daiary_primary_key=diary_id)
+    target_delete = [_r for _r in unknown_expressions if _r.primary_id == unknown_expression_id]
+
+    history_record = DiaryVersionManager().create_history_record_expression_filed(
+        diary_id=diary_id,
+        current_version=current_version,
+        operation="delete",
+        primary_id=unknown_expression_id,
+        expression_original=target_delete[0].expression,
+        expression_translation=target_delete[0].expression_translation
+    )
+    assert history_record is not None
+
+    # delete the unknown expression record
+    db_con = duckdb.connect(DB_PATH)
+    db_con.execute("DELETE from unknown_expressions WHERE primary_id = ?", (unknown_expression_id, ))
+    db_con.commit()
+    db_con.close()
+
+    handler.save_diary_version_history(history_record)
+
+    return redirect(url_for('diary_detail', diary_id=diary_id))
+
+
+@app.route('/diary/<diary_id>/add_expression', methods=['POST'])
+def add_expression_logic(diary_id):
+    handler = HandlerDairyDB(DB_PATH)
+
+    # 1. Get the data from the form
+    expression = request.form.get('expression_original')
+    translation = request.form.get('expression_translation')
+
+    entries = handler.fetch_dairy_entry_language(daiary_primary_key=diary_id)
+    assert entries is not None
+    current_version = entries[0].current_version
+
+    unknown_exp_entry = UnknownExpressionEntry(
+        expression=expression,
+        expression_translation=translation,
+        span_original=(-1, -1),
+        span_translation=(-1, -1),
+        language_source=entries[0].language_source,
+        language_annotation=entries[0].language_annotation,
+        created_at=datetime.now(),
+        primary_id_DiaryEntry=entries[0].primary_id
+    )
+
+    history_record = DiaryVersionManager().create_history_record_expression_filed(
+        diary_id=diary_id,
+        current_version=current_version,
+        operation="add",
+        primary_id=unknown_exp_entry.primary_id,
+        expression_original=expression,
+        expression_translation=translation
+    )
+    assert history_record is not None
+
+
+    handler.save_unknown_expression(unknown_exp_entry)
+    handler.save_diary_version_history(history_record)
+    
+    # 3. Redirect back to the diary entry view
+    return redirect(url_for('diary_detail', diary_id=diary_id))
+
+
+@app.route('/diary/<diary_id>/update_text', methods=['POST'])
+def update_diary_text(diary_id):
+    handler = HandlerDairyDB(DB_PATH)
+
+    # 1. Get the data from the form
+    update_rewriting = request.form.get('update_rewriting', None)
+    if update_rewriting is None:
+        return redirect(url_for('diary_detail', diary_id=diary_id))
+    # end if
+
+    entries = handler.fetch_dairy_entry_language(daiary_primary_key=diary_id)
+    assert entries is not None
+    
+    current_version = entries[0].current_version
+
+    history_record = DiaryVersionManager().create_history_record_text_filed(
+        diary_id=diary_id,
+        current_version=current_version,
+        field_name="diary_rewritten",
+        old_text=entries[0].diary_rewritten,
+        new_text=update_rewriting
+    )
+    if history_record is None:
+        return redirect(url_for('diary_detail', diary_id=diary_id))
+    # end if
+
+    # delete the unknown expression record
+    db_con = duckdb.connect(DB_PATH)
+    db_con.execute("UPDATE diary_entries SET diary_rewritten = ? WHERE primary_id = ?", (update_rewriting, diary_id))
+    db_con.commit()
+    db_con.close()
+
+    handler.save_diary_version_history(history_record)
+    
+    # 3. Redirect back to the diary entry view
+    return redirect(url_for('diary_detail', diary_id=diary_id))
+
+
 @app.route('/diary/<diary_id>')
-def diary_detail(diary_id):
+def diary_detail(diary_id, methods=['GET']):
     handler = HandlerDairyDB(DB_PATH)
     
     entries = handler.fetch_dairy_entry_language(daiary_primary_key=diary_id)
@@ -83,7 +198,7 @@ def diary_detail(diary_id):
 
     assert len(entries) == 1, f"The primary_id {diary_id} must be the one."
 
-    # fetch unknown expressions
+    # ---- fetch unknown expressions ----
     expressions = handler.fetch_unknown_expression(daiary_primary_key=diary_id)
     if expressions is None:
         expressions = []
@@ -91,9 +206,9 @@ def diary_detail(diary_id):
     expressions = [_r.model_dump() for _r in expressions]
 
     diary = entries[0]
-    # -----------------
+    # ---- END: fetch unknown expressions ----
 
-    # fetch grammatical errors
+    # ---- fetch grammatical errors ----
     try:
         chroma_db = get_vector_store(ChromDB_PATH)
         seq_error_info = fetch_grammatical_errors(diary.primary_id, chroma_db)
@@ -102,10 +217,18 @@ def diary_detail(diary_id):
         logger.error(f"Error fetching grammatical errors: {e}")
         seq_error_info = []
     # end try
-    
+    # ---- END: fetch grammatical errors ----
+
     # DuckDB returns tuples. Mapping them to keys for easier HTML access (optional but recommended)
     # (Here we just use indices in the template for brevity)
-    return render_template('details.html', diary=diary.model_dump(), expressions=expressions, errors=seq_error_info)
+    form_data = {
+        'input_rewriting': diary.diary_rewritten
+    }
+    return render_template('details.html', 
+                           diary=diary.model_dump(), 
+                           expressions=expressions, 
+                           errors=seq_error_info,
+                           form=form_data)
 
 
 # --- 3. Routes ---

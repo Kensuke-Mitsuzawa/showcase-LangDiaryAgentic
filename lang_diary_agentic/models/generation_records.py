@@ -15,6 +15,7 @@ class DiaryEntry(BaseModel):
     level_rewriting: PossibleLevelRewriting
     model_id_tutor: str
     title_diary: str
+    current_version: int
     created_at: datetime = Field(default_factory=datetime.now)    
     primary_id: ty.Optional[str] = None
 
@@ -46,3 +47,12 @@ class UnknownExpressionEntry(BaseModel):
             self.primary_id = hex_dig
         # end if
 # end class
+
+
+class HistoryRecord(BaseModel):
+    history_id: str
+    primary_id_DiaryEntry: str
+    version_from: int
+    version_to: int
+    created_at: datetime
+    changes: ty.Dict
