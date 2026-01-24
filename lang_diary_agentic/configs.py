@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=DOTENV, extra='allow')
 
     def model_post_init(self, context: ty.Any) -> None:
-        self.GENERATION_DB_PATH = os.path.join(self.DB_BASE_DIR, "data", "diary_log.duckdb")
-        self.ErrorVectorDB_PATH = os.path.join(self.DB_BASE_DIR, "data", "chroma_db")
+        self.GENERATION_DB_PATH = (Path(self.DB_BASE_DIR).absolute() / "data" / "diary_log.duckdb").as_posix()
+        self.ErrorVectorDB_PATH = (Path(self.DB_BASE_DIR).absolute() / "data" / "chroma_db").as_posix()
 
         if self.Mode_Deployment == 'cloud_api':
             assert self.Cloud_API_Token is not None, "`Cloud_API_Token` must be give."

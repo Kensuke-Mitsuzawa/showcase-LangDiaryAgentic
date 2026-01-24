@@ -2,6 +2,8 @@ import typing as ty
 import logging
 import duckdb
 import datetime
+import json
+from pathlib import Path
 
 from .models.generation_records import DiaryEntry, UnknownExpressionEntry
 from .logging_configs import apply_logging_suppressions
@@ -15,6 +17,7 @@ logger = logging.getLogger(__name__)
 class HandlerDairyDB():
     def __init__(self, db_path: str):
         self.db_path = db_path
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
 
     def init_db(self):
         self.init_table_diary()
@@ -30,6 +33,8 @@ class HandlerDairyDB():
                 created_at TIMESTAMP,
                 expression VARCHAR,
                 expression_translation VARCHAR,
+                span_original VARCHAR,
+                span_translation VARCHAR,
                 language_source VARCHAR,
                 language_annotation VARCHAR
             );
@@ -62,16 +67,17 @@ class HandlerDairyDB():
 
         query = """
         INSERT INTO unknown_expressions VALUES (
-            ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
         """
-
         conn.execute(query, (
             entry_unknown.primary_id, # primary_id
             entry_unknown.primary_id_DiaryEntry, # primary_id_DiaryEntry
             entry_unknown.created_at, # created_at
             entry_unknown.expression, # expression
             entry_unknown.expression_translation,
+            json.dumps(entry_unknown.span_original),
+            json.dumps(entry_unknown.span_translation),
             entry_unknown.language_source, # language_source
             entry_unknown.language_annotation # language_annotation
         ))
@@ -202,8 +208,10 @@ class HandlerDairyDB():
                 created_at=_entry[2],
                 expression=_entry[3],
                 expression_translation=_entry[4],
-                language_source=_entry[5],
-                language_annotation=_entry[6]
+                span_original=json.loads(_entry[5]),
+                span_translation=json.loads(_entry[6]),
+                language_source=_entry[7],
+                language_annotation=_entry[8]
             )
             stack.append(_entry)
         # end for

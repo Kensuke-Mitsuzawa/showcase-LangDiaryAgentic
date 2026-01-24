@@ -419,9 +419,11 @@ def node_translator(state: AgentState) -> ty.Dict:
     # record position before the replacement
     regex_position_original = []
     for _d_pair in seq_translations:
-        _regex_pattern = _d_pair["expression_original"].replace('[', '\\[').replace(']', '\\]')
+        _regex_pattern = _d_pair["expression_original"].replace('[', '').replace(']', '')
         regex_position_original += [(_d_pair, _o) for _o in re.finditer(f'{_regex_pattern}', draft_text, re.DOTALL)]
     # end for
+    if len(seq_translations) != len(regex_position_original):
+        breakpoint()
     assert len(seq_translations) == len(regex_position_original), f"Invalid extraction {seq_translations}, {regex_position_original}"
 
     # replacement
@@ -636,11 +638,15 @@ def node_rewriter(state: AgentState, max_try: int = 5, default_max_length: int =
 
     # do nothing if `is_processor_success` is False
     if not state["is_processor_success"]:
-        return {}
+        return {
+            "suggestion_response": ""
+        }
     # end if
     if task_config.is_execute is False:
         logger.info("SKip the tast since is_execute = False.")
-        return {}
+        return {
+            "suggestion_response": ""
+        }
     # end if
     
     lang_code_diary = state['lang_diary_body']

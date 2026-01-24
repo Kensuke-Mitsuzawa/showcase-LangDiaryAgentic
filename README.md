@@ -165,23 +165,26 @@ Please copy the `env_base` and make `.env`.
 
 # 🚀 Deployment
 
-The system supports dual-mode deployment via `configs.py`.
-Please jump to "Deployment with Docker" when you prefer to use the docker container.
+The system supports dual-mode deployment via `.env`.
 
+## LLM Server
 
-## A. Local Mode (Standalone)
-
-Ideal for single-user privacy. No complex setup required other than GPU drivers.
-
-## B. Server Mode (API)
+### A. Server Mode: Custom HuggingFace API
 
 Decouples the heavy inference engine from the UI.
-
-### Launch the Inference API:
 
 ```
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
+
+`Mode_Deployment="server_custom_hf"` in the `.env` file.
+
+### B. Server Mode: Ollama
+
+Ollama server is recommended for those one use this app on CPU device.
+Simply, lauching the OLLAMA service.
+
+`Mode_Deployment="server_ollama"` in the `.env` file.
 
 ## Launch the Frontend Interfaces:
  
@@ -202,13 +205,7 @@ docker-compose --profile server up --build
 
 #### Container on client
 
-Please edit the `.env` (create it if not exists).
-The file is 
-
-```
-Server_API_Endpoint="http://0.0.0.0:8000"
-```
-
+Please edit the `.env` (create it if not exists). 
 
 The client web app is launched with command (i.e. on the laptop).
 

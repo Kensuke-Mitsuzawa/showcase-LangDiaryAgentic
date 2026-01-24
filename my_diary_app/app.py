@@ -1,9 +1,11 @@
+import typing as ty
 import logging
 from pathlib import Path
+import re
 
 from flask import Flask, render_template, request, abort
 
-from lang_diary_agentic.graph import init_graph
+from lang_diary_agentic.graph import init_graph, TaskParameterConfig
 from lang_diary_agentic.module_fetch_data_viewer import fetch_grammatical_errors
 from lang_diary_agentic.vector_store import get_vector_store
 
@@ -24,6 +26,34 @@ assert DB_PATH is not None
 
 ChromDB_PATH = settings.ErrorVectorDB_PATH
 assert ChromDB_PATH is not None
+
+
+def parse_nested_form(form_data: ty.Dict) -> ty.Dict:
+    """
+    Converts flat form keys like 'config_translator[max_tokens]' 
+    into nested dict {'config_translator': {'max_tokens': ...}}
+    """
+    nested_data = {}
+    
+    # 1. Regex to catch pattern: parent[child]
+    pattern = re.compile(r'(\w+)\[(\w+)\]')
+
+    for key, value in form_data.items():
+        match = pattern.match(key)
+        if match:
+            parent, child = match.groups()
+            
+            if parent not in nested_data:
+                nested_data[parent] = {}
+            
+            # Type Conversion
+            if child == 'max_tokens':
+                nested_data[parent][child] = int(value)
+            elif child in ['is_execute', 'enable_thinking']:
+                # Checkboxes send 'on' if checked. We handle 'missing' checkboxes below.
+                nested_data[parent][child] = (value == 'on')
+
+    return nested_data
 
 
 # --- VIEW The List (Table) ---
@@ -83,6 +113,9 @@ def diary_detail(diary_id):
 def diary_editor():
     result = None
     error = None
+
+    handler = HandlerDairyDB(DB_PATH)
+    handler.init_db()
     
     # Defaults for the form inputs
     form_data = {
@@ -102,9 +135,34 @@ def diary_editor():
             "level_rewriting": request.form.get('level_rewriting'),
             "title_diary": request.form.get('title_diary')
         }
+        
+        parsed_dict = parse_nested_form(request.form)
+        form_config_llm_exec = {
+            "config_translator": TaskParameterConfig(
+                is_execute=True,
+                max_tokens=parsed_dict.get('config_translator', {}).get('max_tokens', 512),
+                enable_thinking=parsed_dict.get('config_translator', {}).get('enable_thinking', False),
+            ),
+            "config_archivist": TaskParameterConfig(
+                is_execute=True,
+                max_tokens=parsed_dict.get('config_archivist', {}).get('max_tokens', 512),
+                enable_thinking=parsed_dict.get('config_archivist', {}).get('enable_thinking', False),
+            ),
+            "config_rewriter": TaskParameterConfig(
+                is_execute=parsed_dict.get('config_rewriter', {}).get('is_execute', False),
+                max_tokens=parsed_dict.get('config_rewriter', {}).get('max_tokens', 512),
+                enable_thinking=parsed_dict.get('config_rewriter', {}).get('enable_thinking', False),
+            ),
+            "config_reviewer": TaskParameterConfig(
+                is_execute=parsed_dict.get('config_reviewer', {}).get('is_execute', False),
+                max_tokens=parsed_dict.get('config_reviewer', {}).get('max_tokens', 512),
+                enable_thinking=parsed_dict.get('config_reviewer', {}).get('enable_thinking', False),
+            )
+        }
 
         if form_data['draft_text']:
             try:
+                form_data.update(form_config_llm_exec)
                 # 2. Invoke Graph
                 # We simply pass the dict exactly as your logic expects
                 result = app_graph.invoke(form_data)
