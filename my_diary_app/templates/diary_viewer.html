@@ -20,6 +20,7 @@
     <table class="table table-hover mt-4">
         <thead class="table-dark">
             <tr>
+                <th>Status</th>
                 <th>Date</th>
                 <th>Time</th>
                 <th>Title</th>
@@ -30,9 +31,8 @@
         <tbody>
             {% for row in diaries %}
             <tr>
-                <td>
-                    <a href="{{ url_for('diary_detail', diary_id=row['primary_id']) }}">{{row['date_diary']}}</a>
-                </td>
+                <td>{{ row['status'] }}</td>
+                <td><a href="{{ url_for('diary_detail', diary_id=row['primary_id'] ) }}">{{ row['date_diary'] }}</a></td>
                 <td><time datetime={{ row['created_at'] }}>{{ row['created_at'] }}</time></td>
                 <td>{{ row['title_diary'] }}</td>
                 <td>{{ row['language_source'] }}</td>

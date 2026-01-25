@@ -229,7 +229,12 @@ def node_set_metadata(state: AgentState):
     diary_date = state.get("date_diary", str(date.today()))
     created_at = datetime.now()
     datetime_str = created_at.isoformat()
-    primary_id_DiaryEntry = f"{diary_date}_{datetime_str}"
+    
+    if state["primary_id_DiaryEntry"] is None:
+        primary_id_DiaryEntry = f"{diary_date}_{datetime_str}"
+    else:
+        primary_id_DiaryEntry = state["primary_id_DiaryEntry"]
+    # end if
 
     if state["title_diary"] is None:
         title_diary = ""

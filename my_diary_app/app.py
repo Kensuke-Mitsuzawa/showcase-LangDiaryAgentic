@@ -1,11 +1,15 @@
 import typing as ty
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, date
 import re
 import duckdb
+import uuid
+import threading
+import tinydb
+from pydantic import BaseModel
 
-from flask import Flask, render_template, abort, redirect, url_for, request
+from flask import Flask, render_template, abort, redirect, url_for, request, jsonify
 
 from lang_diary_agentic.graph import init_graph, TaskParameterConfig
 from lang_diary_agentic.module_fetch_data_viewer import fetch_grammatical_errors
@@ -31,6 +35,19 @@ assert DB_PATH is not None
 
 ChromDB_PATH = settings.ErrorVectorDB_PATH
 assert ChromDB_PATH is not None
+
+
+# --- IN-MEMORY JOB STORE ---
+# In a real production app, use Redis/Database. For a single-user app, this dict is fine.
+# Structure: { "job_id": { "status": "processing" | "completed" | "error", "result": ... } }
+JOBS = tinydb.TinyDB(Path(settings.DB_BASE_DIR) / "status_db.json")
+
+PossibleSattus = ty.Literal['completed', 'error', 'processing']
+class StatusRecord(BaseModel):
+    job_id: str
+    status: PossibleSattus
+    diary_id: str
+    message: str
 
 
 def parse_nested_form(form_data: ty.Dict) -> ty.Dict:
@@ -61,18 +78,39 @@ def parse_nested_form(form_data: ty.Dict) -> ty.Dict:
     return nested_data
 
 
-# --- VIEW The List (Table) ---
-@app.route('/diary_viewer')
-def index():
-    handler = HandlerDairyDB(DB_PATH)
-    
-    seq_entries = handler.fetch_dairy_entry_language()
-    if seq_entries is None:
-        return render_template('diary_viewer.html', diaries=[])
-    # end if
-    diaries = [_r.model_dump() for _r in seq_entries]
+def process_diary_background(job_id: str, form_data: ty.Dict, status_record: StatusRecord):
+    """
+    This function runs in a separate thread.
+    It does the heavy LLM work and saves the result to DuckDB.
+    """
+    created_at = datetime.now()
+    diary_date = str(date.today())
+    datetime_str = created_at.isoformat()
 
-    return render_template('diary_viewer.html', diaries=diaries)
+    primary_id_DiaryEntry = f"{diary_date}_{datetime_str}"
+    form_data['primary_id_DiaryEntry'] = primary_id_DiaryEntry
+
+    status_record.diary_id = primary_id_DiaryEntry
+
+    try:
+        logger.info(f"[{job_id}] Starting background task...")
+        
+        # SIMULATE HEAVY WORK (Replace this with your actual app_graph.invoke)
+        result = app_graph.invoke(form_data) 
+        
+        status_record.status = "completed"
+        status_record.message = "Analysis finished successfully."
+        # 3. UPDATE JOB STATUS
+        JOBS.insert(status_record.model_dump())
+        logger.info(f"[{job_id}] Task completed.")
+
+    except Exception as e:
+        logger.error(f"[{job_id}] Error: {e}")
+
+        status_record.status = "error"
+        status_record.message = str(e)
+
+        JOBS.insert(status_record.model_dump())
 
 
 # --- VIEW 2: Diary Detail ---
@@ -238,8 +276,136 @@ def diary_detail(diary_id, methods=['GET']):
                            form=form_data)
 
 
+# --- VIEW The List (Table) ---
+
+@app.route('/diary_viewer')
+def diary_viewer():
+    handler = HandlerDairyDB(DB_PATH)
+    
+    seq_entries = handler.fetch_dairy_entry_language()
+    if seq_entries is None:
+        return render_template('diary_viewer.html', diaries=[])
+    # end if
+    diaries = [_r.model_dump() for _r in seq_entries]
+    for _obj in diaries:
+        q = tinydb.Query()
+        output = JOBS.search(q.diary_id == _obj['primary_id'])
+        if output is None or output == []:
+            _obj['status'] = "unknown"
+        else:
+            r = StatusRecord(**output[0])
+            _obj['status'] = r.status
+    # end for
+
+    return render_template('diary_viewer.html', diaries=diaries)
+
+
+# @app.route('/status/<job_id>')
+# def job_status_page(job_id):
+#     """Renders the waiting page."""
+#     job = JOBS.get(job_id)
+#     if not job:
+#         return "Job not found", 404
+#     return render_template('status.html', job_id=job_id)
+
+
+@app.route('/api/status/<job_id>')
+def api_check_status(job_id):
+    """API endpoint for JavaScript to poll."""
+    job = JOBS.get(job_id)
+    if not job:
+        return jsonify({"status": "unknown"}), 404
+    return jsonify(job)
+
+
+@app.route('/api/status/<diary_id>')
+def api_dialy_status(diary_id):
+    """API endpoint for JavaScript to poll."""
+    q = tinydb.Query()
+    output = JOBS.search(q.diary_id == diary_id)
+    r = StatusRecord(**output)
+
+    return r.status
+
+
 # --- 3. Routes ---
-@app.route('/', methods=['GET', 'POST'])
+
+
+@app.route('/analyze', methods=['POST'])
+def analyze_entry():
+    form_data = request.form.to_dict() # Convert ImmutableDict to standard dict
+    assert "draft_text" in form_data
+    assert "lang_diary_body" in form_data
+    assert "lang_annotation" in form_data
+    assert "level_rewriting" in form_data
+    assert "title_diary" in form_data
+    
+    param_obj = {
+        "draft_text": request.form.get('draft_text'),
+        "lang_diary_body": request.form.get('lang_diary_body'),
+        "lang_annotation": request.form.get('lang_annotation'),
+        "level_rewriting": request.form.get('level_rewriting'),
+        "title_diary": request.form.get('title_diary')
+    }
+    
+    parsed_dict = parse_nested_form(request.form)
+    form_config_llm_exec = {
+        "config_translator": TaskParameterConfig(
+            is_execute=True,
+            max_tokens=parsed_dict.get('config_translator', {}).get('max_tokens', 512),
+            enable_thinking=parsed_dict.get('config_translator', {}).get('enable_thinking', False),
+        ),
+        "config_archivist": TaskParameterConfig(
+            is_execute=True,
+            max_tokens=parsed_dict.get('config_archivist', {}).get('max_tokens', 512),
+            enable_thinking=parsed_dict.get('config_archivist', {}).get('enable_thinking', False),
+        ),
+        "config_rewriter": TaskParameterConfig(
+            is_execute=parsed_dict.get('config_rewriter', {}).get('is_execute', False),
+            max_tokens=parsed_dict.get('config_rewriter', {}).get('max_tokens', 512),
+            enable_thinking=parsed_dict.get('config_rewriter', {}).get('enable_thinking', False),
+        ),
+        "config_reviewer": TaskParameterConfig(
+            is_execute=parsed_dict.get('config_reviewer', {}).get('is_execute', False),
+            max_tokens=parsed_dict.get('config_reviewer', {}).get('max_tokens', 512),
+            enable_thinking=parsed_dict.get('config_reviewer', {}).get('enable_thinking', False),
+        )
+    }
+
+    if form_data['draft_text']:
+        try:
+            param_obj.update(form_config_llm_exec)
+        except Exception as e:
+            logger.error(f"Error during invocation: {e}")
+            error = str(e)
+            return render_template('diary_editor.html', error=error, form=form_data, possible_rewriting_level=ty.get_args(PossibleLevelRewriting))
+    else:
+        error = "Please enter some text."
+        return render_template('diary_editor.html', error=error, form=form_data, possible_rewriting_level=ty.get_args(PossibleLevelRewriting))
+
+    # end if
+
+    # 2. Generate a unique Job ID
+    job_id = str(uuid.uuid4())
+    
+    # 3. Set initial status
+    r = StatusRecord(
+        job_id=job_id,
+        status='processing',
+        diary_id='',
+        message='')
+    JOBS.insert(r.model_dump())
+    
+    # 4. Start the background thread
+    # daemon=True means this thread dies if the main app crashes (good for cleanup)
+    thread = threading.Thread(target=process_diary_background, args=(job_id, param_obj), daemon=True)
+    thread.start()
+    
+    # 5. IMMEDIATELY redirect user to the Status Page
+    return redirect(url_for('diary_viewer'))
+
+
+@app.route('/', methods=['GET'])
 def diary_editor():
     result = None
     error = None
@@ -256,55 +422,58 @@ def diary_editor():
         'title_diary': ''
     }
 
-    if request.method == 'POST':
+    # if request.method == 'POST':
         # 1. Gather Input
-        form_data = {
-            "draft_text": request.form.get('draft_text'),
-            "lang_diary_body": request.form.get('lang_diary_body'),
-            "lang_annotation": request.form.get('lang_annotation'),
-            "level_rewriting": request.form.get('level_rewriting'),
-            "title_diary": request.form.get('title_diary')
-        }
+        # form_data = {
+        #     "draft_text": request.form.get('draft_text'),
+        #     "lang_diary_body": request.form.get('lang_diary_body'),
+        #     "lang_annotation": request.form.get('lang_annotation'),
+        #     "level_rewriting": request.form.get('level_rewriting'),
+        #     "title_diary": request.form.get('title_diary')
+        # }
         
-        parsed_dict = parse_nested_form(request.form)
-        form_config_llm_exec = {
-            "config_translator": TaskParameterConfig(
-                is_execute=True,
-                max_tokens=parsed_dict.get('config_translator', {}).get('max_tokens', 512),
-                enable_thinking=parsed_dict.get('config_translator', {}).get('enable_thinking', False),
-            ),
-            "config_archivist": TaskParameterConfig(
-                is_execute=True,
-                max_tokens=parsed_dict.get('config_archivist', {}).get('max_tokens', 512),
-                enable_thinking=parsed_dict.get('config_archivist', {}).get('enable_thinking', False),
-            ),
-            "config_rewriter": TaskParameterConfig(
-                is_execute=parsed_dict.get('config_rewriter', {}).get('is_execute', False),
-                max_tokens=parsed_dict.get('config_rewriter', {}).get('max_tokens', 512),
-                enable_thinking=parsed_dict.get('config_rewriter', {}).get('enable_thinking', False),
-            ),
-            "config_reviewer": TaskParameterConfig(
-                is_execute=parsed_dict.get('config_reviewer', {}).get('is_execute', False),
-                max_tokens=parsed_dict.get('config_reviewer', {}).get('max_tokens', 512),
-                enable_thinking=parsed_dict.get('config_reviewer', {}).get('enable_thinking', False),
-            )
-        }
+        # parsed_dict = parse_nested_form(request.form)
+        # form_config_llm_exec = {
+        #     "config_translator": TaskParameterConfig(
+        #         is_execute=True,
+        #         max_tokens=parsed_dict.get('config_translator', {}).get('max_tokens', 512),
+        #         enable_thinking=parsed_dict.get('config_translator', {}).get('enable_thinking', False),
+        #     ),
+        #     "config_archivist": TaskParameterConfig(
+        #         is_execute=True,
+        #         max_tokens=parsed_dict.get('config_archivist', {}).get('max_tokens', 512),
+        #         enable_thinking=parsed_dict.get('config_archivist', {}).get('enable_thinking', False),
+        #     ),
+        #     "config_rewriter": TaskParameterConfig(
+        #         is_execute=parsed_dict.get('config_rewriter', {}).get('is_execute', False),
+        #         max_tokens=parsed_dict.get('config_rewriter', {}).get('max_tokens', 512),
+        #         enable_thinking=parsed_dict.get('config_rewriter', {}).get('enable_thinking', False),
+        #     ),
+        #     "config_reviewer": TaskParameterConfig(
+        #         is_execute=parsed_dict.get('config_reviewer', {}).get('is_execute', False),
+        #         max_tokens=parsed_dict.get('config_reviewer', {}).get('max_tokens', 512),
+        #         enable_thinking=parsed_dict.get('config_reviewer', {}).get('enable_thinking', False),
+        #     )
+        # }
 
-        if form_data['draft_text']:
-            try:
-                form_data.update(form_config_llm_exec)
-                # 2. Invoke Graph
-                # We simply pass the dict exactly as your logic expects
-                result = app_graph.invoke(form_data)
+        # if form_data['draft_text']:
+        #     try:
+        #         form_data.update(form_config_llm_exec)
+        #         # 2. Invoke Graph
+        #         # We simply pass the dict exactly as your logic expects
+        #         result = app_graph.invoke(form_data)
                 
-            except Exception as e:
-                logger.error(f"Error during invocation: {e}")
-                error = str(e)
-        else:
-            error = "Please enter some text."
+        #     except Exception as e:
+        #         logger.error(f"Error during invocation: {e}")
+        #         error = str(e)
+        # else:
+        #     error = "Please enter some text."
 
-    return render_template('diary_editor.html', result=result, error=error, form=form_data, possible_rewriting_level=ty.get_args(PossibleLevelRewriting))
+    return render_template('diary_editor.html', 
+                           error=error, 
+                           form=form_data, 
+                           possible_rewriting_level=ty.get_args(PossibleLevelRewriting))
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5000, host='0.0.0.0')
