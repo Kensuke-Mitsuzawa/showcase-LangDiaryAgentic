@@ -16,35 +16,25 @@
 <body class="container mt-5">
     <h1>📘 LinguaLog</h1>
     <p><a href="{{ url_for('diary_editor') }}">Diary editor view</a></p>
-    <p><a href="{{ url_for('vocabulary_viewer') }}">Vocabulary view</a></p>
+    <p><a href="{{ url_for('diary_viewer') }}">Diary entry view</a></p>    
     
     <table class="table table-hover mt-4">
         <thead class="table-dark">
             <tr>
-                <th>Status</th>
-                <th>Date</th>
-                <th>Time</th>
-                <th>Title</th>
-                <th>Diary Language</th>
                 <th>Annotation Lang</th>
+                <th></th>
+                <th>translation</th>
+                <th>Diary Language</th>
                 <th>delete</th>
             </tr>
         </thead>
         <tbody>
-            {% for row in diaries %}
+            {% for exp in expressions %}
             <tr>
-                <td>{{ row['status'] }}</td>
-                <td><a href="{{ url_for('diary_detail', diary_id=row['primary_id'] ) }}">{{ row['date_diary'] }}</a></td>
-                <td><time datetime={{ row['created_at'] }}>{{ row['created_at'] }}</time></td>
-                <td>{{ row['title_diary'] }}</td>
-                <td>{{ row['language_source'] }}</td>
-                <td>{{ row['language_annotation'] }}</td>
-                <td>
-                    <div id="expression-delete" class="col-md-6">
-                        <a href="{{ url_for('make_diary_invaid', diary_id=row['primary_id']) }}" 
-                        class="btn btn-danger px-5" onclick="return confirm('Are you sure?')">Delete</a>
-                    </div>
-                </td>
+                <td>{{ exp.language_annotation }}</td>
+                <td>{{ exp.expression }} </td>
+                <td>{{ exp.expression_translation }} </td>
+                <td>{{ exp.language_source }} </td>                
             </tr>
             {% endfor %}
         </tbody>

@@ -222,10 +222,13 @@ class HandlerDairyDB():
         if daiary_primary_key is not None:
             query_vars.append(daiary_primary_key)
             where_clause.append("primary_id_DiaryEntry = ?")
-        
-
-        query_final = query_base + " WHERE " + " AND ".join(where_clause) 
+                
+        if len(where_clause) > 0:
+            query_final = query_base + " WHERE " + " AND ".join(where_clause) 
+        else:
+            query_final = query_base
         # end if
+
         seq_result = conn.execute(query_final, tuple(query_vars)).fetchall()
         columns = [desc[0] for desc in conn.description]
         dict_results = [dict(zip(columns, row)) for row in seq_result]

@@ -277,6 +277,14 @@ def diary_detail(diary_id, methods=['GET']):
                            errors=seq_error_info,
                            form=form_data)
 
+# --- vocabulary list ---
+
+@app.route('/vocabulary_viewer')
+def vocabulary_viewer():
+    handler = HandlerDairyDB(DB_PATH)
+    seq_entries = handler.fetch_unknown_expression()
+    
+    return render_template("vocabulary_viewer.html", expressions=seq_entries)
 
 # --- VIEW The List (Table) ---
 
