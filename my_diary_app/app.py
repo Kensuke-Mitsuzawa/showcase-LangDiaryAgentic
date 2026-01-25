@@ -7,6 +7,7 @@ import duckdb
 import uuid
 import threading
 import tinydb
+import time
 from pydantic import BaseModel
 
 from flask import Flask, render_template, abort, redirect, url_for, request, jsonify
@@ -282,7 +283,7 @@ def diary_detail(diary_id, methods=['GET']):
 def diary_viewer():
     handler = HandlerDairyDB(DB_PATH)
     
-    seq_entries = handler.fetch_dairy_entry_language()
+    seq_entries = handler.fetch_dairy_entry_language(is_show_only=True)
     if seq_entries is None:
         return render_template('diary_viewer.html', diaries=[])
     # end if
@@ -291,22 +292,39 @@ def diary_viewer():
         q = tinydb.Query()
         output = JOBS.search(q.diary_id == _obj['primary_id'])
         if output is None or output == []:
-            _obj['status'] = "unknown"
+            _emoji = "❓"
+            _obj['status'] = _emoji
         else:
             r = StatusRecord(**output[0])
-            _obj['status'] = r.status
+            if r.status == "completed":
+                _emoji = "✅"
+            elif r.status == "error":
+                _emoji = "❌"
+            elif r.status == "processing":
+                _emoji = "⏳"
+            else:
+                _emoji = "❓" 
+            # end if
+            _obj['status'] = _emoji
     # end for
 
     return render_template('diary_viewer.html', diaries=diaries)
 
 
-# @app.route('/status/<job_id>')
-# def job_status_page(job_id):
-#     """Renders the waiting page."""
-#     job = JOBS.get(job_id)
-#     if not job:
-#         return "Job not found", 404
-#     return render_template('status.html', job_id=job_id)
+@app.route('/diary_viewer/delete/<diary_id>', methods=["GET"])
+def make_diary_invaid(diary_id: str):
+    handler = HandlerDairyDB(DB_PATH)
+    
+    seq_entries = handler.fetch_dairy_entry_language(is_show_only=True, daiary_primary_key=diary_id)
+    if seq_entries is None:
+        return redirect(url_for('diary_viewer'))
+    # end if
+    assert len(seq_entries) == 1
+
+    conn = duckdb.connect(DB_PATH)
+    conn.execute("UPDATE diary_entries SET is_show = ? WHERE primary_id = ?", (False, diary_id))
+
+    return redirect(url_for('diary_viewer'))
 
 
 @app.route('/api/status/<job_id>')
@@ -325,7 +343,21 @@ def api_dialy_status(diary_id):
     output = JOBS.search(q.diary_id == diary_id)
     r = StatusRecord(**output)
 
-    return r.status
+    if r.status == "completed":
+        _emoji = "✅"
+    elif r.status == "error":
+        _emoji = "❌"
+    elif r.status == "processing":
+        _emoji = "⏳"
+    else:
+        _emoji = "❓"
+    
+    return jsonify({
+        "code_status": r.status,
+        "emoji": _emoji
+    })
+
+
 
 
 # --- 3. Routes ---
@@ -395,12 +427,13 @@ def analyze_entry():
         diary_id='',
         message='')
     JOBS.insert(r.model_dump())
-    
+
     # 4. Start the background thread
     # daemon=True means this thread dies if the main app crashes (good for cleanup)
-    thread = threading.Thread(target=process_diary_background, args=(job_id, param_obj), daemon=True)
+    thread = threading.Thread(target=process_diary_background, args=(job_id, param_obj, r), daemon=True)
     thread.start()
     
+    time.sleep(10)
     # 5. IMMEDIATELY redirect user to the Status Page
     return redirect(url_for('diary_viewer'))
 
@@ -421,53 +454,6 @@ def diary_editor():
         'level_rewriting': 'B2',
         'title_diary': ''
     }
-
-    # if request.method == 'POST':
-        # 1. Gather Input
-        # form_data = {
-        #     "draft_text": request.form.get('draft_text'),
-        #     "lang_diary_body": request.form.get('lang_diary_body'),
-        #     "lang_annotation": request.form.get('lang_annotation'),
-        #     "level_rewriting": request.form.get('level_rewriting'),
-        #     "title_diary": request.form.get('title_diary')
-        # }
-        
-        # parsed_dict = parse_nested_form(request.form)
-        # form_config_llm_exec = {
-        #     "config_translator": TaskParameterConfig(
-        #         is_execute=True,
-        #         max_tokens=parsed_dict.get('config_translator', {}).get('max_tokens', 512),
-        #         enable_thinking=parsed_dict.get('config_translator', {}).get('enable_thinking', False),
-        #     ),
-        #     "config_archivist": TaskParameterConfig(
-        #         is_execute=True,
-        #         max_tokens=parsed_dict.get('config_archivist', {}).get('max_tokens', 512),
-        #         enable_thinking=parsed_dict.get('config_archivist', {}).get('enable_thinking', False),
-        #     ),
-        #     "config_rewriter": TaskParameterConfig(
-        #         is_execute=parsed_dict.get('config_rewriter', {}).get('is_execute', False),
-        #         max_tokens=parsed_dict.get('config_rewriter', {}).get('max_tokens', 512),
-        #         enable_thinking=parsed_dict.get('config_rewriter', {}).get('enable_thinking', False),
-        #     ),
-        #     "config_reviewer": TaskParameterConfig(
-        #         is_execute=parsed_dict.get('config_reviewer', {}).get('is_execute', False),
-        #         max_tokens=parsed_dict.get('config_reviewer', {}).get('max_tokens', 512),
-        #         enable_thinking=parsed_dict.get('config_reviewer', {}).get('enable_thinking', False),
-        #     )
-        # }
-
-        # if form_data['draft_text']:
-        #     try:
-        #         form_data.update(form_config_llm_exec)
-        #         # 2. Invoke Graph
-        #         # We simply pass the dict exactly as your logic expects
-        #         result = app_graph.invoke(form_data)
-                
-        #     except Exception as e:
-        #         logger.error(f"Error during invocation: {e}")
-        #         error = str(e)
-        # else:
-        #     error = "Please enter some text."
 
     return render_template('diary_editor.html', 
                            error=error, 

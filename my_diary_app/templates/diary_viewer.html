@@ -26,6 +26,7 @@
                 <th>Title</th>
                 <th>Diary Language</th>
                 <th>Annotation Lang</th>
+                <th>delete</th>
             </tr>
         </thead>
         <tbody>
@@ -37,6 +38,12 @@
                 <td>{{ row['title_diary'] }}</td>
                 <td>{{ row['language_source'] }}</td>
                 <td>{{ row['language_annotation'] }}</td>
+                <td>
+                    <div id="expression-delete" class="col-md-6">
+                        <a href="{{ url_for('make_diary_invaid', diary_id=row['primary_id']) }}" 
+                        class="btn btn-danger px-5" onclick="return confirm('Are you sure?')">Delete</a>
+                    </div>
+                </td>
             </tr>
             {% endfor %}
         </tbody>

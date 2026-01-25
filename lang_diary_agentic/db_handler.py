@@ -77,7 +77,8 @@ class HandlerDairyDB():
                 level_rewriting VARCHAR,
                 model_id_tutor VARCHAR,
                 title_diary VARCHAR,
-                current_version INTEGER
+                current_version INTEGER,
+                is_show BOOLEAN
             );
         """)
         conn.close()
@@ -152,7 +153,8 @@ class HandlerDairyDB():
     def fetch_dairy_entry_language(self,
                                    language_daiary_body: ty.Optional[str] = None,
                                    language_annotation: ty.Optional[str] = None,
-                                   daiary_primary_key: ty.Optional[str] = None
+                                   daiary_primary_key: ty.Optional[str] = None,
+                                   is_show_only: bool = True,
                                    ) -> ty.Optional[ty.List[DiaryEntry]]:
         conn = duckdb.connect(self.db_path, read_only=True)
         query_base = "SELECT * FROM diary_entries"
@@ -168,6 +170,9 @@ class HandlerDairyDB():
         if daiary_primary_key is not None:
             query_vars.append(daiary_primary_key)
             where_clause.append("primary_id = ?")
+        if is_show_only:
+            query_vars.append(True)
+            where_clause.append("is_show = ?")
         
         query_final = query_base + " WHERE " + " AND ".join(where_clause) 
         # end if

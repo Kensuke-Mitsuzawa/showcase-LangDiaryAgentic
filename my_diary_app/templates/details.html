@@ -70,7 +70,7 @@
                     <div id="expression-delete" class="col-md-6">
                         <a href="{{ url_for('delete_unknown_expression', diary_id=diary.primary_id, unknown_expression_id=expr.primary_id) }}" 
                         class="btn btn-danger px-5" onclick="return confirm('Are you sure?')">Delete</a>
-                    </div>                    
+                    </div>
                 </div>
             {% else %}
             <p>No unknown expressions found for this entry.</tr>

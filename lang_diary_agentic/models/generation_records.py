@@ -18,6 +18,7 @@ class DiaryEntry(BaseModel):
     current_version: int
     created_at: datetime = Field(default_factory=datetime.now)    
     primary_id: ty.Optional[str] = None
+    is_show: bool
 
     def model_post_init(self, context: ty.Any) -> None:
         if self.primary_id is None:

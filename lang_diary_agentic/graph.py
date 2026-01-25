@@ -2,6 +2,7 @@ import logging
 import json
 import re
 import copy
+import duckdb
 from datetime import date, datetime
 from pydantic import BaseModel, Field
 
@@ -73,6 +74,7 @@ class AgentState(TypedDict):
     title_diary: str
     primary_id_DiaryEntry: str
     created_at: datetime
+    diary_entry: DiaryEntry
     # signal to convey the task status
     is_processor_success: bool
     is_archivist_success: bool
@@ -216,6 +218,44 @@ def create_compatible_chain(formatted_input: ty.List[ty.Tuple],
 
 
 # --- Define Nodes ---
+
+
+def node_init_db_entry(state: AgentState):
+    assert settings.GENERATION_DB_PATH is not None
+    handler = HandlerDairyDB(settings.GENERATION_DB_PATH)
+    handler.init_db()
+
+    # Use today's date if not provided
+    diary_date = state["diary_date"]
+    created_at = state["created_at"]
+
+    language_source = state.get("lang_diary_body", "Unknown")
+    language_source = "Unknown" if language_source is None else language_source
+
+    language_annotation = state.get("lang_annotation", "Unknown")
+    language_annotation = "Unknown" if language_annotation is None else language_annotation
+
+    diary_entry = DiaryEntry(
+        date_diary=diary_date,
+        language_source=language_source,
+        language_annotation=language_annotation,
+        diary_original=state["draft_text"],
+        diary_replaced='',
+        diary_rewritten='',
+        created_at=created_at,
+        primary_id=state["primary_id_DiaryEntry"],
+        level_rewriting=state["level_rewriting"],
+        model_id_tutor=settings.MODEL_NAME_Primary,
+        title_diary=state["title_diary"],
+        current_version=0,
+        is_show=True
+    )
+
+    handler.save_diary_entry(diary_entry)
+
+    return {
+        "diary_entry": diary_entry
+    }
 
 
 def node_validation(state: AgentState):
@@ -785,20 +825,21 @@ def node_save_duckdb(state: AgentState):
     language_annotation = state.get("lang_annotation", "Unknown")
     language_annotation = "Unknown" if language_annotation is None else language_annotation
 
-    diary_entry = DiaryEntry(
-        date_diary=diary_date,
-        language_source=language_source,
-        language_annotation=language_annotation,
-        diary_original=state["draft_text"],
-        diary_replaced=state["final_response"],
-        diary_rewritten=state["suggestion_response"],
-        created_at=created_at,
-        primary_id=state["primary_id_DiaryEntry"],
-        level_rewriting=state["level_rewriting"],
-        model_id_tutor=settings.MODEL_NAME_Primary,
-        title_diary=state["title_diary"],
-        current_version=0
-    )
+    # diary_entry = DiaryEntry(
+    #     date_diary=diary_date,
+    #     language_source=language_source,
+    #     language_annotation=language_annotation,
+    #     diary_original=state["draft_text"],
+    #     diary_replaced=state["final_response"],
+    #     diary_rewritten=state["suggestion_response"],
+    #     created_at=created_at,
+    #     primary_id=state["primary_id_DiaryEntry"],
+    #     level_rewriting=state["level_rewriting"],
+    #     model_id_tutor=settings.MODEL_NAME_Primary,
+    #     title_diary=state["title_diary"],
+    #     current_version=0
+    # )
+    diary_entry: DiaryEntry = state["diary_entry"]
     
     diary_entry_primary_key = diary_entry.primary_id
     assert diary_entry_primary_key is not None
@@ -823,9 +864,16 @@ def node_save_duckdb(state: AgentState):
     
     assert settings.GENERATION_DB_PATH is not None
     handler = HandlerDairyDB(settings.GENERATION_DB_PATH)
-    handler.init_db()
 
-    handler.save_diary_entry(diary_entry)
+    # handler.save_diary_entry(diary_entry)
+    conn = duckdb.connect(settings.GENERATION_DB_PATH)
+    conn.execute("UPDATE diary_entries SET diary_replaced = ?, diary_rewritten = ? WHERE primary_id = ?", (
+        state["final_response"],
+        state["suggestion_response"],
+        diary_entry.primary_id
+    ))
+
+
     for _entry in seq_unknown_expression_entry:
         handler.save_unknown_expression(_entry)
     # end for
@@ -837,6 +885,7 @@ def init_graph():
     workflow = StateGraph(AgentState)
     workflow.add_node("meta_data", node_set_metadata)
     workflow.add_node("validator", node_validation)
+    workflow.add_node("init_db_entry", node_init_db_entry)    
     workflow.add_node("adjuster_parameter", node_dynamic_parameter_adjustment)
     workflow.add_node("detector", node_language_detect)
     workflow.add_node("translator", node_translator)
@@ -847,7 +896,8 @@ def init_graph():
 
     workflow.set_entry_point("validator")
     workflow.add_edge("validator", "meta_data")
-    workflow.add_edge("meta_data", "adjuster_parameter")    
+    workflow.add_edge("meta_data", "init_db_entry")
+    workflow.add_edge("init_db_entry", "adjuster_parameter")    
     workflow.add_edge("adjuster_parameter", "detector")    
     workflow.add_edge("detector", "translator")
     workflow.add_edge("translator", "archivist")
