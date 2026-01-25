@@ -84,14 +84,6 @@ def process_diary_background(job_id: str, form_data: ty.Dict, status_record: Sta
     This function runs in a separate thread.
     It does the heavy LLM work and saves the result to DuckDB.
     """
-    created_at = datetime.now()
-    diary_date = str(date.today())
-    datetime_str = created_at.isoformat()
-
-    primary_id_DiaryEntry = f"{diary_date}_{datetime_str}"
-    form_data['primary_id_DiaryEntry'] = primary_id_DiaryEntry
-
-    status_record.diary_id = primary_id_DiaryEntry
 
     try:
         logger.info(f"[{job_id}] Starting background task...")
@@ -101,8 +93,11 @@ def process_diary_background(job_id: str, form_data: ty.Dict, status_record: Sta
         
         status_record.status = "completed"
         status_record.message = "Analysis finished successfully."
-        # 3. UPDATE JOB STATUS
-        JOBS.insert(status_record.model_dump())
+        # UPDATE JOB STATUS
+        Q = tinydb.Query()
+        _res = JOBS.get(Q.job_id == status_record.job_id)
+        JOBS.update({'status': "completed"}, doc_ids=[_res.doc_id])
+
         logger.info(f"[{job_id}] Task completed.")
 
     except Exception as e:
@@ -111,7 +106,13 @@ def process_diary_background(job_id: str, form_data: ty.Dict, status_record: Sta
         status_record.status = "error"
         status_record.message = str(e)
 
-        JOBS.insert(status_record.model_dump())
+        Q = tinydb.Query()
+        _res = JOBS.get(Q.job_id == status_record.job_id)
+        JOBS.update({'status': status_record.status}, doc_ids=[_res.doc_id])
+        JOBS.update({'message': status_record.message}, doc_ids=[_res.doc_id])        
+    # end 
+
+    return True
 
 
 # --- VIEW 2: Diary Detail ---
@@ -419,12 +420,19 @@ def analyze_entry():
 
     # 2. Generate a unique Job ID
     job_id = str(uuid.uuid4())
-    
+
+    created_at = datetime.now()
+    diary_date = str(date.today())
+    datetime_str = created_at.isoformat()
+
+    primary_id_DiaryEntry = f"{diary_date}_{datetime_str}"
+    param_obj['primary_id_DiaryEntry'] = primary_id_DiaryEntry
+
     # 3. Set initial status
     r = StatusRecord(
         job_id=job_id,
         status='processing',
-        diary_id='',
+        diary_id=primary_id_DiaryEntry,
         message='')
     JOBS.insert(r.model_dump())
 
