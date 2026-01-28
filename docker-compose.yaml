@@ -22,12 +22,12 @@ services:
     build: .
     container_name: diary_client_ui
     profiles: ["client"]
+    working_dir: /app/my_diary_app
     ports:
-      - "8501:8501"
+      - "5000:5000"
     # Overwrites the Dockerfile default to run Streamlit
-    command: uv run streamlit run /app/ui/data_input_viewer.py --server.port=8501 --server.address=0.0.0.0
+    command: uv run streamlit run python app.py
     volumes:
-      - ./ui:/app/ui               # Allows live-editing of UI code
       - ./dbs:/app/data # Persistent Vector DB storage
     environment:
       - SERVER_API_URL=${SERVER_API_URL} # Internal Docker networking
