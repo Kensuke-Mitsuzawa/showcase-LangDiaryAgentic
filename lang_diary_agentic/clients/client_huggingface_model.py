@@ -63,6 +63,18 @@ class CustomHFServerLLM(ClientLLM, BaseChatModel):
             return True
         except Exception as e:
             return False
+        
+    def get_available_models(self) -> List[str]:
+        try:
+            response = requests.get(f"{self.api_url}/generate-model-id")
+            response.raise_for_status()
+            response_json = response.json()
+            model_id = response_json.get("model_id", "")
+        except Exception as e:
+            generated_text = f"Error connecting to server: {e}"
+        # end try
+
+        return [model_id]
 
     def _generate(
         self,

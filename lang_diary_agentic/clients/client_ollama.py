@@ -84,6 +84,28 @@ class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
             return True
         except Exception:
             return False
+        
+    def get_available_models(self) -> List[str]:
+        """
+        Fetches a list of all models currently available on the Ollama server.
+        Endpoint: GET /api/tags
+        """
+        try:
+            # Request the list of models from the Ollama tags endpoint
+            response = requests.get(f"{self.api_url}/api/tags")
+            response.raise_for_status()
+            
+            data = response.json()
+            # Ollama returns a dict with a "models" key containing a list of model objects
+            models_info = data.get("models", [])
+            
+            # Extract only the names (e.g., 'qwen2.5:3b') from the metadata
+            model_names = [m.get("name") for m in models_info if "name" in m]
+            return model_names
+
+        except Exception as e:
+            logger.error(f"Error fetching models from {self.api_url}: {e}")
+            return []        
 
     def _generate(
         self,
@@ -91,7 +113,13 @@ class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
         stop: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        
+        model_name: str
+        if "model_name" in kwargs:
+            model_name = kwargs['model_name']
+        else:
+            model_name = self.model_name
+        # end if
+
         # -------------------------------------------------------
         # STEP 1: Convert LangChain Messages -> Ollama JSON
         # -------------------------------------------------------
@@ -112,11 +140,15 @@ class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
         # STEP 2: Prepare Payload (Ollama Specifics)
         # -------------------------------------------------------
         # Ollama puts hyperparameters inside an 'options' dict
+        enable_thinking: bool = kwargs.get("enable_thinking", False)
+        assert isinstance(enable_thinking, bool)
+
         options = {
             "temperature": kwargs.get("temperature", 0.7),
             # Note: Ollama uses 'num_predict' for max tokens, not 'max_length'
             "num_predict": kwargs.get("max_tokens", kwargs.get("max_length", 512)), 
             "top_p": kwargs.get("top_p", 0.9),
+            "think": enable_thinking
         }
 
         # Add stop tokens if provided
@@ -124,7 +156,7 @@ class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
             options["stop"] = stop
 
         payload = {
-            "model": self.model_name,
+            "model": model_name,
             "messages": ollama_formatted_chat,
             "stream": False,  # We want a single JSON response
             "options": options
@@ -170,7 +202,7 @@ class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
             response_metadata={
                 "finish_reason": finish_reason,
                 "token_usage": token_usage,
-                "model_name": self.model_name
+                "model_name": model_name
             }
         )
 

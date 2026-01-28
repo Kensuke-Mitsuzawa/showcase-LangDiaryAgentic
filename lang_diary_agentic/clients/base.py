@@ -1,4 +1,5 @@
 import abc
+import typing as ty
 
 
 class ClientEmbeddingModel(abc.ABC):
@@ -6,4 +7,6 @@ class ClientEmbeddingModel(abc.ABC):
 
 
 class ClientLLM(abc.ABC):
-    pass
+    @abc.abstractmethod
+    def get_available_models(self) -> ty.List[str]:
+        raise NotImplementedError()
