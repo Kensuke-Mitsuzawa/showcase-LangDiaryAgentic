@@ -60,23 +60,6 @@
 
     <div id="unknown_expressions">
         <h3>❓ Unknown Expressions</h3>
-        <div id="list_unknown_expressions">
-            {% for expr in expressions %}
-                <div class="row mt-4">
-                    <div class="alert alert-success py-2 col-md-6">
-                        <strong>{{ expr['expression'] }}</strong> &rarr; {{ expr['expression_translation'] }}
-                    </div>
-                    
-                    <div id="expression-delete" class="col-md-6">
-                        <a href="{{ url_for('delete_unknown_expression', diary_id=diary.primary_id, unknown_expression_id=expr.primary_id) }}" 
-                        class="btn btn-danger px-5" onclick="return confirm('Are you sure?')">Delete</a>
-                    </div>
-                </div>
-            {% else %}
-            <p>No unknown expressions found for this entry.</tr>
-            {% endfor %}
-        </div>
-
         <div id="add_unknown_expressions">
             <!-- according element -->
             <div class="accordion mb-4 col-md-6" id="configAccordion">
@@ -94,6 +77,8 @@
                                     <input type="text" name="expression_original" class="form-control" placeholder="[word]" value="" required>
                                     <label class="form-label fw-bold">translation</label>
                                     <input type="text" name="expression_translation" class="form-control" placeholder="translation" value="" required>
+                                    <label class="form-label fw-bold">reamrk</label>
+                                    <input type="text" name="remark" class="form-control" placeholder="your arbitrary comment" value="" required>
                                 </div>
                                 
                                 <button type="submit" class="btn btn-primary px-5">add</button>
@@ -102,9 +87,49 @@
                     </div>
                 </div>
             </div>
-            <!-- according element -->
+        </div>
+        <!-- according element -->
+        <div id="list_unknown_expressions">
+            {% for expr in expressions %}
+            <div class="row mt-4">
+                <div class="alert alert-success py-2 col-md-6">
+                    <strong>{{ expr['expression'] }}</strong> &rarr; {{ expr['expression_translation'] }}
+                    {% if expr['remark_field'] %}
+                        <span class="ms-2">📌: {{ expr['remark_field'] }}</span>
+                    {% endif %}                        
+                </div>
+                
+                <div id="expression-delete" class="col-md-6">
+                    <a href="{{ url_for('delete_unknown_expression', diary_id=diary.primary_id, unknown_expression_id=expr.primary_id) }}" 
+                    class="btn btn-danger px-5" onclick="return confirm('Are you sure?')">Delete</a>
+                </div>
+
+                <div class="mt-2" style="max-width: 600px;">
+                    <form action="{{ url_for('post_remark_to_unknown_expression', diary_id=diary.primary_id, unknown_expression_id=expr['primary_id']) }}" 
+                        method="POST" 
+                        class="d-flex align-items-center"
+                        onsubmit="document.getElementById('loading').style.display='block'">
+                        
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text fw-bold">Remark</span>
+                            
+                            <input type="text" name="remark" class="form-control" 
+                                placeholder="Add a note..." 
+                                value="{% if expr['remark_field'] and expr['remark_field'] != 'None' %}{{ expr['remark_field'] }}{% endif %}" 
+                                required>
+                            
+                            <button type="submit" class="btn btn-primary">Save</button>
+                        </div>
+                    </form>
+                </div>
+            {% else %}
+                <p>No unknown expressions found for this entry.</tr>
+            {% endfor %}
+            </div>
         </div>
     </div>
+
+    <hr class="my-5">
 
     <div id="grammatical_errors">
         <h3>⚠️ Grammatical Errors</h3>

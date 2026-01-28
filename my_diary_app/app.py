@@ -116,8 +116,39 @@ def process_diary_background(job_id: str, form_data: ty.Dict, status_record: Sta
 
 
 # --- VIEW 2: Diary Detail ---
-@app.route('/diary/<diary_id>/<unknown_expression_id>/delete')
-def delete_unknown_expression(diary_id, unknown_expression_id, methods=['GET']):
+@app.route('/diary/<diary_id>/<unknown_expression_id>/add_remark', methods=['POST'])
+def post_remark_to_unknown_expression(diary_id: str,
+                                      unknown_expression_id: str):
+    handler = HandlerDairyDB(DB_PATH)
+    
+    db_con = duckdb.connect(DB_PATH)
+    # check if the record exists
+    sql_check = "SELECT count(*) FROM unknown_expressions WHERE primary_id = ?"
+    db_con.execute(sql_check, (unknown_expression_id, ))
+    _record_count = db_con.fetchone()
+
+    if _record_count is None or _record_count[0] == 0:
+        return redirect(url_for('diary_detail', diary_id=diary_id))
+    # end if
+
+    remark = request.form.get('remark')
+    remark = None if remark == '' else remark
+
+    if remark is None:
+        return redirect(url_for('diary_detail', diary_id=diary_id))
+    # end if
+
+
+    # update the table
+    db_con.execute("UPDATE unknown_expressions SET remark_field = ? WHERE primary_id = ?", (remark, unknown_expression_id, ))
+    db_con.commit()
+    db_con.close()
+
+    return redirect(url_for('diary_detail', diary_id=diary_id))
+
+
+@app.route('/diary/<diary_id>/<unknown_expression_id>/delete', methods=['GET'])
+def delete_unknown_expression(diary_id: str, unknown_expression_id):
     handler = HandlerDairyDB(DB_PATH)
 
     entries = handler.fetch_dairy_entry_language(daiary_primary_key=diary_id)
@@ -155,6 +186,8 @@ def add_expression_logic(diary_id):
     # 1. Get the data from the form
     expression = request.form.get('expression_original')
     translation = request.form.get('expression_translation')
+    remark = request.form.get('remark')
+    remark = None if remark == '' else remark
 
     entries = handler.fetch_dairy_entry_language(daiary_primary_key=diary_id)
     assert entries is not None
@@ -165,6 +198,7 @@ def add_expression_logic(diary_id):
         expression_translation=translation,
         span_original=(-1, -1),
         span_translation=(-1, -1),
+        remark_field=remark,
         language_source=entries[0].language_source,
         language_annotation=entries[0].language_annotation,
         created_at=datetime.now(),
@@ -271,7 +305,7 @@ def diary_detail(diary_id, methods=['GET']):
     form_data = {
         'input_rewriting': diary.diary_rewritten
     }
-    return render_template('details.html', 
+    return render_template('diary_details.html', 
                            diary=diary.model_dump(), 
                            expressions=expressions, 
                            errors=seq_error_info,

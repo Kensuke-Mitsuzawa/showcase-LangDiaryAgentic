@@ -56,7 +56,8 @@ class HandlerDairyDB():
                 span_original VARCHAR,
                 span_translation VARCHAR,
                 language_source VARCHAR,
-                language_annotation VARCHAR
+                language_annotation VARCHAR,
+                remark_field VARCHAR
             );
         """)
         conn.close()

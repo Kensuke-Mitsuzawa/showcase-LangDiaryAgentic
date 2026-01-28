@@ -35,6 +35,7 @@ class UnknownExpressionEntry(BaseModel):
     span_translation: ty.Tuple[int, int]
     language_source: str
     language_annotation: str
+    remark_field: ty.Optional[str]
     created_at: datetime = Field(default_factory=datetime.now)
     primary_id_DiaryEntry: str = Field(description="primary_key of DiaryEntry table.")
     primary_id: ty.Optional[str] = None
