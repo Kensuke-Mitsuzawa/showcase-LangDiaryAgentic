@@ -116,12 +116,39 @@ test_cefr_level = [
 
 # xml_schema = """\nIMPORTANT: Return the result ONLY as XML in the following structure:\n<scale>CEFR scale</scale>"""
 
+ 
+prompt = """Your task is to evaluate the provided text for grammatical complexity, vocabulary range, and syntactic sophistication.
+
+STAGES OF ANALYSIS:
+1. First, provide a detailed description of the text. Identify specific grammatical structures (e.g., passive voice, subjunctive, relative clauses) and evaluate the rarity or formality of the vocabulary used.
+2. Based on your analysis, conclude with the proficiency level from A1 to C2.
+
+Use the following strict guidelines:
+- A1: Basic survival phrases, simple subject-verb-object sentences.
+- A2: Simple descriptions, routine tasks, high-frequency vocabulary.
+- B1: Connected text on familiar topics, personal interests, ability to describe experiences.
+- B2: Complex arguments, technical discussions in field of specialization, distinct fluency.
+- C1: Flexible and effective use for social/academic purposes, implicit meaning, complex structure.
+- C2: Fine shades of meaning, highly idiomatic, differentiates finer nuances even in complex situations.
+
+At the very end of your response, you MUST provide the final classification in the following XML format:
+
+<analysis>
+    <cefr>LEVEL</cefr>
+    <language>LANGUAGE</language>
+    <reasoning_summary>A one-sentence summary of your findings</reasoning_summary>
+</analysis>
+
+Text to evaluate:
+"{text}"
+"""
+
 template = [
-    ("system", f"You are a skilled language teacher of English."),
-    ("user", "Task: judge the language proficienfy level of the following document in the CEFR proficiency scale.\n\n{doc}")
+    ("system", f"You are an expert linguistic analyst specializing in European languages and the CEFR framework."),
+    ("user", prompt)
 ]
 
-llm_model_bind = llm.bind(model_name="gemma3:4b-it-qat", enable_thinking=False)
+llm_model_bind = llm.bind(model_name="gemma3:1b", enable_thinking=False)
 
 print(llm.get_available_models())
 
@@ -132,7 +159,7 @@ chain = create_compatible_chain(template, llm_model_bind)
 for _doc_obj in test_cefr_level:
     with timer(f"Level: {_doc_obj['cefr']} Lang: {_doc_obj['language']}") as t_value:
         response = chain.invoke({
-            "doc": _doc_obj['text']
+            "text": _doc_obj['text']
         })
 
     print(_doc_obj['cefr'], t_value.duration, response)
