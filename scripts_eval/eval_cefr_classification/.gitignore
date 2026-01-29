@@ -1,1 +1,2 @@
-cefr_benchmark.duckdb
+cefr_benchmark.duckdb*
+cefr_benchmark.duckdb.wal
