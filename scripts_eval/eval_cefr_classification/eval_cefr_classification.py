@@ -412,7 +412,7 @@ def get_top_n_lang_groups(seq_docs: ty.List[RecordDocument], n: int) -> List[Rec
     return seq_stack
 
 
-def main(is_dry_run: bool = False):
+def main(is_dry_run: bool = False, n_docs_per_lang: int = 10):
     exec_plans = set_model_configurations()
     prompt_templates = set_prompt_template()
 
@@ -420,7 +420,9 @@ def main(is_dry_run: bool = False):
     _docs = con.execute("SELECT * FROM documents").fetchall()
     _cols = [desc[0] for desc in con.description]
     docs = [RecordDocument(**dict(zip(_cols, doc))) for doc in _docs]
-    docs = get_top_n_lang_groups(docs, n=10)
+    docs = get_top_n_lang_groups(docs, n=n_docs_per_lang)
+
+    logger.info(f"📝 Total documents to process: {len(docs)}")
 
     seq_plans = list(itertools.product(exec_plans, prompt_templates))
     _tokenizer, _model, _assistant_model = None, None, None
@@ -453,7 +455,7 @@ if __name__ == "__main__":
     
     init_db()
     set_datasets() # Downloads and populates DB
-    main(is_dry_run=False)
+    main(is_dry_run=False, n_docs_per_lang=10)
 
     # Verification
     logger.info("\n📊 Results Summary:")
