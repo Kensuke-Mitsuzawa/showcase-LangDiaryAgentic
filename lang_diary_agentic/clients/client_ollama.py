@@ -8,7 +8,7 @@ from langchain_core.outputs import ChatResult, ChatGeneration
 from langchain_core.embeddings import Embeddings
 
 from ..configs import settings
-from .base import ClientEmbeddingModel, ClientLLM
+from .base import ClientEmbeddingModel, ClientLLM, GenerationParameter
 
 assert settings.Server_API_Endpoint is not None
 
@@ -113,9 +113,12 @@ class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
         stop: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> ChatResult:
+        
+        generation_params = GenerationParameter(**kwargs)
+        
         model_name: str
         if "model_name" in kwargs:
-            model_name = kwargs['model_name']
+            model_name = generation_params.model_name
         else:
             model_name = self.model_name
         # end if
@@ -140,20 +143,20 @@ class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
         # STEP 2: Prepare Payload (Ollama Specifics)
         # -------------------------------------------------------
         # Ollama puts hyperparameters inside an 'options' dict
-        enable_thinking: bool = kwargs.get("enable_thinking", False)
+        enable_thinking: bool = generation_params.enable_thinking
         assert isinstance(enable_thinking, bool)
 
         options = {
-            "temperature": kwargs.get("temperature", 0.7),
+            "temperature": generation_params.temperature,
             # Note: Ollama uses 'num_predict' for max tokens, not 'max_length'
-            "num_predict": kwargs.get("max_tokens", kwargs.get("max_length", 512)), 
-            "top_p": kwargs.get("top_p", 0.9),
+            "num_predict": generation_params.max_tokens,
+            "top_p": generation_params.top_p,
             "think": enable_thinking
         }
 
         # Add stop tokens if provided
-        if stop:
-            options["stop"] = stop
+        if generation_params.stop:
+            options["stop"] = generation_params.stop
 
         payload = {
             "model": model_name,

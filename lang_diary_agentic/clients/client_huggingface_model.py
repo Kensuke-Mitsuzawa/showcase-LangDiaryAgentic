@@ -11,7 +11,7 @@ import requests
 import logging
 import json
 
-from .base import ClientEmbeddingModel, ClientLLM
+from .base import ClientEmbeddingModel, ClientLLM, GenerationParameter
 
 from lang_diary_agentic.logging_configs import apply_logging_suppressions
 apply_logging_suppressions()
@@ -51,6 +51,7 @@ class CustomHFServerEmbeddings(ClientEmbeddingModel, Embeddings):
 
 class CustomHFServerLLM(ClientLLM, BaseChatModel):
     api_url: str
+    draft_model_name: Optional[str] = None
     
     @property
     def _llm_type(self) -> str:
@@ -82,7 +83,9 @@ class CustomHFServerLLM(ClientLLM, BaseChatModel):
         stop: Optional[List[str]] = None,
         **kwargs: Any,
         ) -> ChatResult:
-        
+
+        generation_params = GenerationParameter(**kwargs)
+
         # -------------------------------------------------------
         # STEP 1: Convert LangChain Messages -> HuggingFace JSON
         # -------------------------------------------------------
@@ -100,11 +103,18 @@ class CustomHFServerLLM(ClientLLM, BaseChatModel):
             hf_formatted_chat.append({"role": role, "content": msg.content})
         # end for
 
+        # draft_model = kwargs.get("draft_model_name", self.draft_model_name)
+        draft_model = generation_params.draft_model_name
+
         payload = {
             "prompt": json.dumps(hf_formatted_chat),
-            "max_length": kwargs.get("max_length", 512),
-            "temperature": kwargs.get("temperature", 0.7),
-            "enable_thinking": kwargs.get("enable_thinking", True)
+            "max_length": generation_params.max_tokens,
+            "temperature": generation_params.temperature,
+            "enable_thinking": generation_params.enable_thinking,
+            # Speculative Decoding Parameters
+            "speculative_decoding": True if draft_model else False,
+            "draft_model_id": draft_model, # Server will load this as assistant_model
+            "num_assistant_tokens": generation_params.num_assistant_tokens,
         }
         
         finish_reason = "unknown"
