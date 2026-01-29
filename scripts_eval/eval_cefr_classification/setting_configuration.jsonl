@@ -1,0 +1,2 @@
+{"llm_configuration_id": "conf_qwen_2-5-7-pure", "model_id_primary": "Qwen/Qwen2.5-7B-Instruct", "model_id_assistant": null, "strategy_decoding": "greedy", "max_new_token": 512}
+{"llm_configuration_id": "conf_qwen_2-5-7-speculative", "model_id_primary": "Qwen/Qwen2.5-7B-Instruct", "model_id_assistant": "Qwen/Qwen2.5-0.5B-Instruct", "strategy_decoding": "greedy", "max_new_token": 512}
