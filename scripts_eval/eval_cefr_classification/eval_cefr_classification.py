@@ -9,6 +9,7 @@ import json
 import hashlib
 import jsonlines
 import re
+import random
 import sys
 from typing import Optional, List, Dict
 from datasets import load_dataset
@@ -20,6 +21,9 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------
 # 1. DATABASE SCHEMA & PYDANTIC MODELS
 # --------------------------------------------------------------------------
+
+
+SEED_RANDOM = 42
 
 PossibleStrategyDecoding = ty.Literal['argmax', 'top-p', 'greedy']
 PossibleCefrLevel = ty.Literal['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
@@ -132,7 +136,7 @@ def set_datasets():
         # Load UniversalCEFR (using a small split for testing if available, else train)
         # Note: 'UniversalCEFR/UniversalCEFR' might need specific config or split
         # See: https://huggingface.co/UniversalCEFR
-        ds_eng = load_dataset("UniversalCEFR/elle_et")['train']
+        ds_eng = load_dataset("UniversalCEFR/cefr_asag_en")['train']
         ds_fra = load_dataset("UniversalCEFR/kwiqiz_fr")['train']
         ds_deu = load_dataset("UniversalCEFR/merlin_de")['train']
     except Exception:
@@ -396,23 +400,30 @@ def execute_plan(
     return tokenizer, model, assistant_model
 
 
-def get_top_n_lang_groups(seq_docs: ty.List[RecordDocument], n: int) -> List[RecordDocument]:
+def get_top_n_lang_scale_groups(seq_docs: ty.List[RecordDocument], n: int) -> List[RecordDocument]:
+    """grouping by language and cefr level, then taking top-n from each group.
+    Do the random sampling as well."""
+    _random_gen = random.Random(SEED_RANDOM)
+
     seq_stack = []
     # Count occurrences of each language
-    for _, lang_group in itertools.groupby(sorted(seq_docs, key=lambda x: x.language), key=lambda x: x.language):
+    for _, lang_group in itertools.groupby(sorted(seq_docs, key=lambda x: (x.language, x.level_cefr_truth)), key=lambda x: (x.language, x.level_cefr_truth)):
         _seq_group = list(lang_group)
-        if len(_seq_group) <= n:
+        _random_gen.shuffle(_seq_group)
+        if n == -1:
             filtered_docs = _seq_group
-            seq_stack += filtered_docs
+        elif len(_seq_group) <= n:
+            filtered_docs = _seq_group
         else:
             filtered_docs = _seq_group[:n]
-            seq_stack += filtered_docs
+        # end if
+        seq_stack += filtered_docs
     # end for
 
     return seq_stack
 
 
-def main(is_dry_run: bool = False, n_docs_per_lang: int = 10):
+def main(is_dry_run: bool = False, n_docs_per_lang: int = -1):
     exec_plans = set_model_configurations()
     prompt_templates = set_prompt_template()
 
@@ -420,7 +431,7 @@ def main(is_dry_run: bool = False, n_docs_per_lang: int = 10):
     _docs = con.execute("SELECT * FROM documents").fetchall()
     _cols = [desc[0] for desc in con.description]
     docs = [RecordDocument(**dict(zip(_cols, doc))) for doc in _docs]
-    docs = get_top_n_lang_groups(docs, n=n_docs_per_lang)
+    docs = get_top_n_lang_scale_groups(docs, n=n_docs_per_lang)
 
     logger.info(f"📝 Total documents to process: {len(docs)}")
 
@@ -455,7 +466,7 @@ if __name__ == "__main__":
     
     init_db()
     set_datasets() # Downloads and populates DB
-    main(is_dry_run=False, n_docs_per_lang=10)
+    main(is_dry_run=False, n_docs_per_lang=50)
 
     # Verification
     logger.info("\n📊 Results Summary:")
