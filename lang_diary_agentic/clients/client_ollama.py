@@ -113,15 +113,16 @@ class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
         stop: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        
-        generation_params = GenerationParameter(**kwargs)
-        
+
         model_name: str
-        if "model_name" in kwargs:
-            model_name = generation_params.model_name
+        if "model_name" not in kwargs:
+            model_name = self.model_name
         else:
             model_name = self.model_name
         # end if
+        kwargs['model_name'] = model_name
+
+        generation_params = GenerationParameter(**kwargs)
 
         # -------------------------------------------------------
         # STEP 1: Convert LangChain Messages -> Ollama JSON

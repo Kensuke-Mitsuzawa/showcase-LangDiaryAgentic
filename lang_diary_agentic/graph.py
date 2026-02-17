@@ -325,7 +325,7 @@ def node_language_detect(state: AgentState):
     
     draft_text = state["draft_text"]
     seq_text_blanket = [x.group() for x in re.finditer(r'\[[^]]+\]', draft_text)]    
-    
+
     # If user already provided them via UI, skip detection
     if state.get("lang_annotation") and state.get("lang_diary_body"):
         _language_diary = state.get("lang_diary_body").strip()  # type: ignore
@@ -343,7 +343,6 @@ def node_language_detect(state: AgentState):
 
     # Otherwise, ask the Small LLM
     logger.info("Missing languages. Asking Small LLM...")
-
 
     # Since this part is supposed to be shorter. So, I use the tranditional ML model.
     language_annotation = check_language.detect_language(' '.join(seq_text_blanket))
@@ -857,7 +856,8 @@ def node_save_duckdb(state: AgentState):
             language_annotation=language_annotation,
             created_at=created_at,
             primary_id_DiaryEntry=diary_entry_primary_key,
-            primary_id=None
+            primary_id=None,
+            remark_field=None
         )
         seq_unknown_expression_entry.append(_unknown_expression_entry)
     # end for
