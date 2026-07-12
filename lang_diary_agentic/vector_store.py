@@ -4,13 +4,16 @@ from typing import List, Union
 
 from langchain_chroma import Chroma
 
+from langchain_openai import OpenAIEmbeddings
 from .clients import CustomOllamaEmbeddings, CustomHFServerEmbeddings
 from .models.vector_store_entry import ErrorRecord
 from .configs import settings
 
+from langchain_core.embeddings import Embeddings
+
 logger = logging.getLogger(__name__)
 
-PossibleEmbeddingHandler = CustomOllamaEmbeddings | CustomHFServerEmbeddings
+PossibleEmbeddingHandler = CustomOllamaEmbeddings | CustomHFServerEmbeddings | OpenAIEmbeddings | Embeddings
 
 def get_vector_store(client_embedding_model_server: PossibleEmbeddingHandler):
     # Uses a free, local model (runs fast on CPU)

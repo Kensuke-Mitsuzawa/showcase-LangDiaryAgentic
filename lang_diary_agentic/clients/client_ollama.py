@@ -10,7 +10,6 @@ from langchain_core.embeddings import Embeddings
 from ..configs import settings
 from .base import ClientEmbeddingModel, ClientLLM, GenerationParameter
 
-assert settings.Server_API_Endpoint is not None
 
 
 logger = logging.getLogger(__name__)
