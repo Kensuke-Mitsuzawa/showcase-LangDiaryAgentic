@@ -5,9 +5,9 @@ from ..static import Languages_Code
 
 class ErrorRecord(BaseModel):
     """Schema for an error entry in the database."""
-    primary_id_DiaryEntry: str = Field(
-        description="field `primary_id` of the DiaryEntry."
-    )
+    # primary_id_DiaryEntry: str = Field(
+    #     description="field `primary_id` of the DiaryEntry."
+    # )
     
     model_id_embedding: str = Field(description="LLM name used for the embedding.")
 
@@ -27,8 +27,12 @@ class ErrorRecord(BaseModel):
         description="The correct version of the phrase."
     )
     
-    category: Literal["Grammar", "Vocabulary", "Spelling", "None"] = Field(
+    category: Literal["Grammar", "Spelling", "None"] = Field(
         description="The linguistic category of the error."
+    )
+
+    explanation: str = Field(
+        description="The explanation of the error."
     )
 
     def to_string(self):

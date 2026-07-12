@@ -1,8 +1,9 @@
 from ..models import AgentState, DiaryEntry
 from ..db_handler import HandlerDairyDB
-from ..configs import settings
+from ..configs import SettingsVariables
 
-def node_init_db_entry(state: AgentState):
+
+def node_init_db_entry(state: AgentState, settings: SettingsVariables):
     assert settings.GENERATION_DB_PATH is not None
     handler = HandlerDairyDB(settings.GENERATION_DB_PATH)
     handler.init_db()

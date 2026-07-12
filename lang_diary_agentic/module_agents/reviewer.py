@@ -1,31 +1,46 @@
 import logging
 import re
 import typing as ty
+from pydantic import BaseModel
+
+import google.generativeai as genai
+import instructor
 
 from ..models import AgentState
-from ..llm_clients import llm_large, create_compatible_chain
+from ..configs import SettingsVariables
+# from ..llm_clients import llm_large, create_compatible_chain
 
 logger = logging.getLogger(__name__)
 
-def node_reviewer(state: AgentState) -> ty.Dict:
-    """Node: Reviewer"""
-    logger.info("--- Node: Reviewer ---")
-    task_config = state["config_reviewer"]
 
-    if task_config.is_execute is False:
-        logger.info("SKip the task since is_execute is False.")
-        return {
-            "total_review": ""
-        }
+class ResponseObjectAgent(BaseModel):
+    pass
+
+
+
+# TODO: This module should be modified. This is a mock for now.
+
+def node_reviewer(state: AgentState, settings: SettingsVariables) -> AgentState:
+    """Node: Reviewer"""
+    system_prompt_message = f"You are an expert editor of the {state.diary_entry_input.lang_diary_body} language."
+    # ("system", 'You are a "Memory Coach" for a language learner. Your goal is to analyze the user CURRENT MISTAKES and compare them against their ERROR HISTORY.'),
+
+
+    logger.info("--- Node: Reviewer ---")
+    # task_config = settings.task_config.reviewer
+
+    # if task_config.is_execute is False:
+    #     logger.info("SKip the task since is_execute is False.")
+    #     return {
+    #         "total_review": ""
+    #     }
 
     if not state["is_processor_success"]:
         return {
             "total_review": ""
         }
     
-    template = [
-        ("system", 'You are a "Memory Coach" for a language learner. Your goal is to analyze the user CURRENT MISTAKES and compare them against their ERROR HISTORY.'),
-        ("user", (
+    user_prompt = (
                 "1. **Current Mistakes:** A list of errors found in the user's latest diary entry.\n"
                 "2. **Error History:** A list of similar errors the user made in the past (retrieved from database). \n"
                 "### INSTRUCTIONS\n"
@@ -42,18 +57,39 @@ def node_reviewer(state: AgentState) -> ty.Dict:
                 "Current Mistakes: {current_mistakes}\n"
                 "Error History: {error_history}\n"
                 "Vocabularies that user does not know: {unkown_expressions}"
-            )
-        )
-    ]
+                )
+    
+    # chain = create_compatible_chain(template, llm_large.bind(max_length=1024, enable_thinking=True))
 
-    chain = create_compatible_chain(template, llm_large.bind(max_length=1024, enable_thinking=True))
+    # response = chain.invoke({
+    #     "current_mistakes": state['grammatical_errors_extracted'], 
+    #     "error_history": state['retrieved_context'], 
+    #     "level_rewriting": state['level_rewriting'],
+    #     "unkown_expressions": state['unkown_expressions']
+    # })
 
-    response = chain.invoke({
-        "current_mistakes": state['grammatical_errors_extracted'], 
-        "error_history": state['retrieved_context'], 
-        "level_rewriting": state['level_rewriting'],
-        "unkown_expressions": state['unkown_expressions']
-    })
+    # Configure Gemini API key
+    genai.configure(api_key=settings.Cloud_API_Token)
+
+    client = instructor.from_gemini(
+        client=genai.GenerativeModel(
+            model_name=settings.MODEL_NAME_Primary,
+        ),
+        mode=instructor.Mode.GEMINI_JSON,
+    )
+
+    response_obj = client.chat.completions.create(
+        messages=[
+            {"role": "system", "content": system_prompt_message},
+            {"role": "user", "content": user_content}
+        ],
+        response_model=ResponseObjectAgent,
+        generation_config={
+            "temperature": state.parameter_config_llm.config_translator.temperature,
+            "top_p": state.parameter_config_llm.config_translator.top_p,
+        },
+    )
+
 
     response_text: str = response.content
     group_replaced = re.findall(r'<review>(.*?)</review>', response_text, re.DOTALL)

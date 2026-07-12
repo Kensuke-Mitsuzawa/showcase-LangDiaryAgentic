@@ -1,6 +1,6 @@
 from ..models import AgentState, TaskParameterConfig
 
-def node_dynamic_parameter_adjustment(state: AgentState):
+def node_dynamic_parameter_adjustment(state: AgentState) -> AgentState:
     """Optimizing the parameter depending on the user's input parameter.
     
     Rule one: + 512 words to the input diary length.
@@ -23,4 +23,4 @@ def node_dynamic_parameter_adjustment(state: AgentState):
         dict_updated_config[_filed_name] = _config_obj
     # end for
 
-    return dict_updated_config
+    return state

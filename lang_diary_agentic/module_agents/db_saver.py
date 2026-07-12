@@ -3,11 +3,11 @@ import duckdb
 
 from ..models import AgentState, DiaryEntry, UnknownExpressionEntry, TranslationReplacementInformation
 from ..db_handler import HandlerDairyDB
-from ..configs import settings
+from ..configs import SettingsVariables
 
 logger = logging.getLogger(__name__)
 
-def node_save_duckdb(state: AgentState):
+def node_save_duckdb(state: AgentState, settings: SettingsVariables):
     """New Node: Save everything to DuckDB"""
     logger.info("--- [4] Saving to DuckDB ---")
     

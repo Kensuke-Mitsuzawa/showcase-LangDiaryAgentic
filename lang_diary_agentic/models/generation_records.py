@@ -1,3 +1,4 @@
+from sqlalchemy.sql.expression import desc
 import typing as ty
 import hashlib
 from pydantic import BaseModel, Field
@@ -9,16 +10,24 @@ class DiaryEntry(BaseModel):
     date_diary: str
     language_source: str
     language_annotation: str
-    diary_original: str
-    diary_replaced: str
-    diary_rewritten: str
-    level_rewriting: PossibleLevelRewriting
-    model_id_tutor: str
+
     title_diary: str
-    current_version: int
-    created_at: datetime = Field(default_factory=datetime.now)    
-    primary_id: ty.Optional[str] = None
-    is_show: bool
+    diary_original: str
+    level_rewriting: PossibleLevelRewriting
+    
+    # model_id_tutor: str
+
+    current_version: ty.Optional[int] = Field(default_factory=lambda: 1)
+    created_at: datetime = Field(default_factory=lambda: datetime.now())    
+    primary_id: ty.Optional[str] = Field(default_factory=lambda: None)
+    is_show: bool = Field(default_factory=lambda: True)
+
+    diary_replaced: ty.Optional[str] = Field(
+        default_factory=lambda: "", 
+        description="Field used for the replaced with literal translations.")
+    diary_rewritten: ty.Optional[str] = Field(
+        default_factory=lambda: "",
+        description="Field used for the rewritten diary text with well-suitable expressions.")
 
     def model_post_init(self, context: ty.Any) -> None:
         if self.primary_id is None:

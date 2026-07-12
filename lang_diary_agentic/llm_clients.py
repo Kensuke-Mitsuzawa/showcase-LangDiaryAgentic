@@ -11,11 +11,11 @@ from .clients import (
     CustomHFServerLLM,
     CustomOllamaServerLLM
 )
-from .configs import settings
+from .configs import SettingsVariables
 
 logger = logging.getLogger(__name__)
 
-def server_custom_hf() -> ty.Tuple[CustomHFServerLLM, CustomHFServerEmbeddings]:
+def server_custom_hf(settings: SettingsVariables) -> ty.Tuple[CustomHFServerLLM, CustomHFServerEmbeddings]:
     """Helper to load a model pipeline"""
     assert settings.Server_API_Endpoint is not None
     llm = CustomHFServerLLM(api_url=settings.Server_API_Endpoint)
@@ -26,7 +26,7 @@ def server_custom_hf() -> ty.Tuple[CustomHFServerLLM, CustomHFServerEmbeddings]:
         raise RuntimeError(f"The server is not available at {settings.Server_API_Endpoint}.")        
     return llm, embedding
 
-def server_ollama() -> ty.Tuple[CustomOllamaServerLLM, CustomOllamaEmbeddings]:
+def server_ollama(settings: SettingsVariables) -> ty.Tuple[CustomOllamaServerLLM, CustomOllamaEmbeddings]:
     assert settings.Server_API_Endpoint is not None
     llm = CustomOllamaServerLLM(api_url=settings.Server_API_Endpoint)
     embedding = CustomOllamaEmbeddings(settings.Server_API_Endpoint)
@@ -75,36 +75,37 @@ class GeminiEmbeddings(Embeddings):
         return result['embedding']
 
 
-if settings.Mode_Deployment == "cloud_api":
-    assert settings.Cloud_API_Token is not None
-    primary_model = settings.MODEL_NAME_Primary
-    if not primary_model or "Qwen" in primary_model:
-        primary_model = "gemini-3.5-flash"
+# if settings.Mode_Deployment == "cloud_api":
+#     assert settings.Cloud_API_Token is not None
+#     primary_model = settings.MODEL_NAME_Primary
+#     if not primary_model or "Qwen" in primary_model:
+#         primary_model = "gemini-3.5-flash"
     
-    llm_large = GeminiChatOpenAI(
-        openai_api_key=settings.Cloud_API_Token,
-        openai_api_base="https://generativelanguage.googleapis.com/v1beta/openai/",
-        model_name=primary_model,
-        temperature=0.0
-    )
-    client_embedding_model_server = GeminiEmbeddings(
-        api_key=settings.Cloud_API_Token,
-        model=settings.MODEL_NAME_Embedding or "models/gemini-embedding-2"
-    )
-    tokenizer = None
-elif settings.Mode_Deployment == "server_custom_hf":
-    logger.info(f"connecting to the API endpoint: {settings.Server_API_Endpoint}")
-    llm_large, client_embedding_model_server = server_custom_hf()
-    logger.info("API is ready.")
-elif settings.Mode_Deployment == "server_ollama":
-    logger.info(f"connecting to the API endpoint: {settings.Server_API_Endpoint}")
-    llm_large, client_embedding_model_server = server_ollama()
-    logger.info("API is ready.")
-else:
-    raise ValueError(f"Invalid Mode_Deployment: {settings.Mode_Deployment}")
+#     llm_large = GeminiChatOpenAI(
+#         openai_api_key=settings.Cloud_API_Token,
+#         openai_api_base="https://generativelanguage.googleapis.com/v1beta/openai/",
+#         model_name=primary_model,
+#         temperature=0.0
+#     )
+#     client_embedding_model_server = GeminiEmbeddings(
+#         api_key=settings.Cloud_API_Token,
+#         model=settings.MODEL_NAME_Embedding or "models/gemini-embedding-2"
+#     )
+#     tokenizer = None
+# elif settings.Mode_Deployment == "server_custom_hf":
+#     logger.info(f"connecting to the API endpoint: {settings.Server_API_Endpoint}")
+#     llm_large, client_embedding_model_server = server_custom_hf()
+#     logger.info("API is ready.")
+# elif settings.Mode_Deployment == "server_ollama":
+#     logger.info(f"connecting to the API endpoint: {settings.Server_API_Endpoint}")
+#     llm_large, client_embedding_model_server = server_ollama()
+#     logger.info("API is ready.")
+# else:
+#     raise ValueError(f"Invalid Mode_Deployment: {settings.Mode_Deployment}")
 
 
 def create_compatible_chain(formatted_input: ty.List[ty.Tuple], 
+                            settings: SettingsVariables,
                             llm):
     """
     Dynamically builds the chain based on whether input is String or List.

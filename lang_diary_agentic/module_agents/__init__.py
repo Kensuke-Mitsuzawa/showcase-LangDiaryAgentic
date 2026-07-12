@@ -2,9 +2,9 @@ from .validator import node_validation
 from .metadata import node_set_metadata
 from .db_entry import node_init_db_entry
 from .parameter_adjustment import node_dynamic_parameter_adjustment
-from .language_detect import node_language_detect
+from .detect_unknown_expressions import node_detect_unknown_expressions
 from .translator import node_translator
-from .archivist import node_archivist
+from .error_analysis import node_error_analysis
 from .rewriter import node_rewriter
 from .reviewer import node_reviewer
 from .db_saver import node_save_duckdb

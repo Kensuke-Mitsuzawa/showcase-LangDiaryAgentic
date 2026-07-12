@@ -7,7 +7,7 @@ from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 from .clients import CustomOllamaEmbeddings, CustomHFServerEmbeddings
 from .models.vector_store_entry import ErrorRecord
-from .configs import settings
+from .configs import SettingsVariables
 
 from langchain_core.embeddings import Embeddings
 
@@ -15,7 +15,10 @@ logger = logging.getLogger(__name__)
 
 PossibleEmbeddingHandler = CustomOllamaEmbeddings | CustomHFServerEmbeddings | OpenAIEmbeddings | Embeddings
 
-def get_vector_store(client_embedding_model_server: PossibleEmbeddingHandler):
+def get_vector_store(
+    client_embedding_model_server: PossibleEmbeddingHandler,
+    settings: SettingsVariables
+    ):
     # Uses a free, local model (runs fast on CPU)
     # 'all-MiniLM-L6-v2' is the industry standard for lightweight embeddings
     vector_store = Chroma(
