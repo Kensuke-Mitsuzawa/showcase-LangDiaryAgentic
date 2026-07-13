@@ -6,7 +6,7 @@ import typing as ty
 
 import google.generativeai as genai
 import instructor
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..models import AgentState, TranslationReplacementInformation
 from ..static import Iso693_code2natural_name
@@ -21,6 +21,7 @@ class ResponseTranslationPair(BaseModel):
 
 class ResponseObjectAgent(BaseModel):
     response: ty.List[ResponseTranslationPair]
+    status: str = "success"
 
 
 # def __extract_xml_errors_node_processor(text: str, 
@@ -123,60 +124,69 @@ def node_translator(state: AgentState, settings: SettingsVariables) -> AgentStat
     )
 
     # Extract the translations from response_obj
+    seq_translation_pair_without_duplication = list(set([(_e.expression_original, _e.expression_translation) for _e in response_obj.response]))
     seq_translations = [
         {
-            "expression_original": item.expression_original,
-            "expression_translation": item.expression_translation.replace('[', '').replace(']', '')
+            "expression_original": item[0],
+            "expression_translation": item[1].replace('[', '').replace(']', '')
         }
-        for item in response_obj.response
+        for item in seq_translation_pair_without_duplication
     ]
 
     # ---- replace the bracketed [text] one-by-one ----
     diary_replaced: str = copy.deepcopy(state.diary_entry_input.diary_original)
-
-    # record position before the replacement
-    regex_position_original = []
-    for _d_pair in seq_translations:
-        _regex_pattern = _d_pair["expression_original"].replace('[', '').replace(']', '').replace(' ', '\\s')
-        regex_position_original += [(_d_pair, _o) for _o in re.finditer(f'{_regex_pattern}', diary_replaced, re.DOTALL)]
+    
+    for _entry_translation in seq_translations:
+        diary_replaced = diary_replaced.replace(_entry_translation["expression_original"], _entry_translation["expression_translation"])
     # end for
 
-    if len(seq_translations) != len(regex_position_original):
-        logger.error(f"Fail to match expressions. Expected {len(seq_translations)}, found {len(regex_position_original)}")
-        return {
-            "processed_output": state.processed_output.model_copy(update={
-                "diary_replaced": "",
-                "diary_rewritten": "",
-                "total_review": "",
-                "unkown_expressions": [],
-                "translation_pair_extracted": []
-            }),
-            "is_processor_success": False
-        }
-    # end if
+    # commenting out the regex search. I do not need the position of string.
+    # # record position before the replacement
+    # regex_position_original = []
+    # for _d_pair in seq_translations:
+    #     _regex_pattern = _d_pair["expression_original"].replace('[', '').replace(']', '').replace(' ', '\\s')
+    #     regex_position_original += [(_d_pair, _o) for _o in re.finditer(f'{_regex_pattern}', diary_replaced, re.DOTALL)]
+    # # end for
 
-    assert len(seq_translations) == len(regex_position_original), f"Invalid extraction {seq_translations}, {regex_position_original}"
+    # if len(seq_translations) != len(regex_position_original):
+    #     logger.error(f"Fail to match expressions. Expected {len(seq_translations)}, found {len(regex_position_original)}")
+    #     return {
+    #         "processed_output": state.processed_output.model_copy(update={
+    #             "diary_replaced": "",
+    #             "diary_rewritten": "",
+    #             "total_review": "",
+    #             "unkown_expressions": [],
+    #             "translation_pair_extracted": []
+    #         }),
+    #         "is_processor_success": False
+    #     }
+    # # end if
 
-    # replacement
-    _t_regex: ty.Tuple[ty.Dict, re.Match]
-    for _t_regex in regex_position_original:
-        diary_replaced = diary_replaced.replace(_t_regex[0]['expression_original'], _t_regex[0]['expression_translation'].replace('[', '').replace(']', ''))
-    # end for
+    # assert len(seq_translations) == len(regex_position_original), f"Invalid extraction {seq_translations}, {regex_position_original}"
 
-    # record position after the replacement
-    regex_position_replacement = []
-    for _d_pair in seq_translations:
-        _regex_pattern: str = _d_pair["expression_translation"].replace('[', '').replace(']', '')
-        regex_position_replacement += [(_d_pair, _o) for _o in re.finditer(_regex_pattern, diary_replaced, re.DOTALL)]
-    # end for
+    # # replacement
+    # _t_regex: ty.Tuple[ty.Dict, re.Match]
+    # for _t_regex in regex_position_original:
+    #     diary_replaced = diary_replaced.replace(_t_regex[0]['expression_original'], _t_regex[0]['expression_translation'].replace('[', '').replace(']', ''))
+    # # end for
 
-    assert len(seq_translations) == len(regex_position_replacement), f"Invalid extraction {seq_translations}, {regex_position_replacement}"
+    # # record position after the replacement
+    # regex_position_replacement = []
+    # for _d_pair in seq_translations:
+    #     _regex_pattern: str = _d_pair["expression_translation"].replace('[', '').replace(']', '')
+    #     regex_position_replacement += [(_d_pair, _o) for _o in re.finditer(_regex_pattern, diary_replaced, re.DOTALL)]
+    # # end for
+
+    # assert len(seq_translations) == len(regex_position_replacement), f"Invalid extraction {seq_translations}, {regex_position_replacement}"
     
     # merge two `regex_position_original` and `regex_position_replacement`
     seq_replacement_before_after = []
     for _i_regex, _d_pair in enumerate(seq_translations):
-        _position_before =  regex_position_original[_i_regex][1].span()
-        _position_after = regex_position_replacement[_i_regex][1].span()
+        # _position_before =  regex_position_original[_i_regex][1].span()
+        # _position_after = regex_position_replacement[_i_regex][1].span()
+        _position_before = (0, 0)
+        _position_after = (0, 0)
+
         seq_replacement_before_after.append(TranslationReplacementInformation(
             expression_original=_d_pair['expression_original'],
             expression_translation=_d_pair['expression_translation'],

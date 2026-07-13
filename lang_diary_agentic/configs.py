@@ -37,7 +37,8 @@ class SettingsVariables(BaseSettings):
     MODEL_NAME_Primary: str
     MODEL_NAME_Embedding: str    
 
-    DB_BASE_DIR: str = Field(default_factory=lambda: Path(__file__).resolve().parent.parent.as_posix())
+    # DB_BASE_DIR: str = Field(default_factory=lambda: Path(__file__).resolve().parent.parent.as_posix())
+    DB_BASE_DIR: str
     DB_NAME_GENERATION: str = "diary_log.duckdb"
     DB_NAME_ERROR_VECTOR: str = "chroma_db"
     GENERATION_DB_PATH: ty.Optional[str] = None

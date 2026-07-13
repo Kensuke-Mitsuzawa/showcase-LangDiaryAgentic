@@ -50,6 +50,7 @@ assert ChromDB_PATH is not None
 # --- IN-MEMORY JOB STORE ---
 # In a real production app, use Redis/Database. For a single-user app, this dict is fine.
 # Structure: { "job_id": { "status": "processing" | "completed" | "error", "result": ... } }
+Path(settings.DB_BASE_DIR).mkdir(parents=True, exist_ok=True)
 JOBS = tinydb.TinyDB(Path(settings.DB_BASE_DIR) / "status_db.json")
 
 PossibleSattus = ty.Literal['completed', 'error', 'processing']

@@ -62,6 +62,7 @@ class ErrorObject(BaseModel):
 
 class ResponseObjectAgent(BaseModel):
     seq_error_objects: ty.List[ErrorObject]
+    status: str = "success"
 
 
 def node_error_analysis(
