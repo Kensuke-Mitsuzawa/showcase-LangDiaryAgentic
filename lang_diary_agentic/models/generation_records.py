@@ -6,6 +6,10 @@ from datetime import datetime
 
 from ..static import PossibleLevelRewriting
 
+
+"""Module to manage DB-records. These records are used for the web-app.
+"""
+
 class DiaryEntry(BaseModel):
     date_diary: str
     language_source: str
@@ -58,6 +62,25 @@ class UnknownExpressionEntry(BaseModel):
             self.primary_id = hex_dig
         # end if
 # end class
+
+
+class PhraseRewritingEntry(BaseModel):
+    expression_source: str
+    expression_rewritten: str
+    language_source: str
+    language_annotation: str
+    remark_field: ty.Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    primary_id_DiaryEntry: str = Field(description="primary_key of DiaryEntry table.")
+    primary_id: ty.Optional[str] = None
+
+    def model_post_init(self, context: ty.Any) -> None:
+        if self.primary_id is None:
+            datetime_str = self.created_at.isoformat()
+            key_combination = f"{self.primary_id_DiaryEntry}_{self.expression_source}_{datetime_str}"
+            hashlib_object = hashlib.sha256(key_combination.encode())
+            hex_dig = hashlib_object.hexdigest()
+            self.primary_id = hex_dig
 
 
 class HistoryRecord(BaseModel):

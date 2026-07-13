@@ -353,6 +353,28 @@ def diary_detail(diary_id):
                            errors=seq_error_info,
                            form=form_data)
 
+
+@app.route('/api/diary/<diary_id>/rewritten_phrases', methods=['GET'])
+def api_get_rewritten_phrases(diary_id: str):
+    handler = HandlerDairyDB(DB_PATH)
+    phrases = handler.fetch_phrase_rewriting(diary_id)
+    if phrases is None:
+        phrases = []
+    return jsonify([
+        {
+            "primary_id": p.primary_id,
+            "primary_id_DiaryEntry": p.primary_id_DiaryEntry,
+            "expression_source": p.expression_source,
+            "expression_rewritten": p.expression_rewritten,
+            "language_source": p.language_source,
+            "language_annotation": p.language_annotation,
+            "remark_field": p.remark_field,
+            "created_at": p.created_at.isoformat() if hasattr(p.created_at, 'isoformat') else str(p.created_at)
+        }
+        for p in phrases
+    ])
+
+
 # --- vocabulary list ---
 
 @app.route('/vocabulary_viewer')

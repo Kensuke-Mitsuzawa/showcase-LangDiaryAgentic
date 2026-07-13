@@ -33,7 +33,8 @@ def node_detect_unknown_expressions(state: AgentState) -> AgentState:
         unkown_expressions=seq_text_blanket,
         translation_pair_extracted=[],
         retrieved_context="",
-        grammatical_errors_extracted=[]
+        grammatical_errors_extracted=[],
+        phrases_rewritten=[],
     )
 
     state.processed_output = processed_output_info

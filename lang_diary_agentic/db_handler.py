@@ -5,7 +5,12 @@ import datetime
 import json
 from pathlib import Path
 
-from .models.generation_records import DiaryEntry, UnknownExpressionEntry, HistoryRecord
+from .models.generation_records import (
+    DiaryEntry, 
+    UnknownExpressionEntry, 
+    PhraseRewritingEntry,
+    HistoryRecord
+    )
 from .logging_configs import apply_logging_suppressions
 
 apply_logging_suppressions()
@@ -24,6 +29,25 @@ class HandlerDairyDB():
         self.init_table_diary()
         self.init_table_unknown_expressions()
         self.init_table_history_record()
+        self.init_table_phrase_rewriting()
+
+    def init_table_phrase_rewriting(self):
+        conn = duckdb.connect(self.db_path)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS phrase_rewriting (
+                primary_id VARCHAR PRIMARY KEY,
+                primary_id_DiaryEntry VARCHAR,
+                created_at TIMESTAMP,
+                expression_source VARCHAR,
+                expression_rewritten VARCHAR,
+                language_source VARCHAR,
+                language_annotation VARCHAR,
+                remark_field VARCHAR
+            );
+        """)
+        conn.commit()
+        conn.close()
+        
 
     def init_table_history_record(self):
         conn = duckdb.connect(self.db_path)
@@ -86,6 +110,25 @@ class HandlerDairyDB():
 
     # ---- POST or UPDATE methods ----
 
+    def save_phrase_rewriting(self, entry_phrase_rewriting: PhraseRewritingEntry):
+        conn = duckdb.connect(self.db_path)
+
+        d_obj = entry_phrase_rewriting.model_dump()
+        _col_names = []
+        _values = []
+        for _k, _v in d_obj.items():
+            _col_names.append(_k)
+            _values.append(_v)
+        place_holder = ', '.join(['?'] * len(_col_names))
+        query = f"INSERT INTO phrase_rewriting ({', '.join(_col_names)}) VALUES ({place_holder})"
+        
+        logger.info(query)
+        conn.execute(query, tuple(_values))
+
+        conn.commit()
+        conn.close()
+        logger.info("✅ Phrase rewriting entry saved to DuckDB.")
+        
     def save_diary_version_history(self, history_record: HistoryRecord):
         conn = duckdb.connect(self.db_path)
 
@@ -151,6 +194,26 @@ class HandlerDairyDB():
     # end def
 
     # ----- fetch -----
+
+    def fetch_phrase_rewriting(self,
+                               primary_id_DiaryEntry: str,
+                               ) -> ty.Optional[ty.List[PhraseRewritingEntry]]:
+        conn = duckdb.connect(self.db_path, read_only=True)
+        query = "SELECT * FROM phrase_rewriting WHERE primary_id_DiaryEntry = ?"
+        seq_result = conn.execute(query, (primary_id_DiaryEntry,)).fetchall()
+        columns = [desc[0] for desc in conn.description]
+        dict_results = [dict(zip(columns, row)) for row in seq_result]
+        conn.close()
+
+        if dict_results is None:
+            return None
+
+        stack = []
+        for _entry in dict_results:
+            _entry = PhraseRewritingEntry(**_entry)
+            stack.append(_entry)
+        return stack
+
     def fetch_dairy_entry_language(self,
                                    language_daiary_body: ty.Optional[str] = None,
                                    language_annotation: ty.Optional[str] = None,

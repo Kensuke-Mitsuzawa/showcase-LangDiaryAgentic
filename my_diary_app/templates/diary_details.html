@@ -143,6 +143,77 @@
             </div>
         {% endfor %}
     </div>
+    <hr class="my-5">
+
+    <div id="rewritten_phrases" class="mb-5">
+        <h3 class="mb-3">✨ Rewritten Phrases Suggestions</h3>
+        
+        <!-- Form to trigger GET request to API method -->
+        <form id="fetch_phrases_form" class="mb-4">
+            <button type="button" class="btn btn-info text-white px-4 py-2 shadow-sm" id="fetch_phrases_btn">
+                Fetch Rewritten Phrases
+            </button>
+        </form>
+
+        <div id="phrases_container" class="row">
+            <!-- Dynamic elements will be inserted here -->
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('fetch_phrases_btn').addEventListener('click', function() {
+            const container = document.getElementById('phrases_container');
+            container.innerHTML = `
+                <div class="col-12 text-center py-4">
+                    <div class="spinner-border text-info" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            `;
+            
+            fetch("{{ url_for('api_get_rewritten_phrases', diary_id=diary['primary_id']) }}")
+                .then(res => {
+                    if (!res.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    container.innerHTML = '';
+                    if (data.length === 0) {
+                        container.innerHTML = `
+                            <div class="col-12">
+                                <p class="text-muted bg-light p-3 rounded">No rewritten phrases found for this entry.</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    data.forEach(phrase => {
+                        const col = document.createElement('div');
+                        col.className = 'col-md-6 mb-3';
+                        col.innerHTML = `
+                            <div class="card border-info shadow-sm h-100">
+                                <div class="card-body">
+                                    <h5 class="card-title text-info fw-bold">${phrase.expression_source}</h5>
+                                    <p class="card-text"><strong>Rewritten:</strong> ${phrase.expression_rewritten}</p>
+                                    ${phrase.remark_field ? `<p class="card-text text-muted mb-0"><small>💡 ${phrase.remark_field}</small></p>` : ''}
+                                </div>
+                            </div>
+                        `;
+                        container.appendChild(col);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching rewritten phrases:', error);
+                    container.innerHTML = `
+                        <div class="col-12">
+                            <div class="alert alert-danger">Failed to load rewritten phrases.</div>
+                        </div>
+                    `;
+                });
+        });
+    </script>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

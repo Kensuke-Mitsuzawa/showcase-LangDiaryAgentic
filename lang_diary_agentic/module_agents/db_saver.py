@@ -1,7 +1,14 @@
 import logging
 import duckdb
 
-from ..models import AgentState, DiaryEntry, UnknownExpressionEntry, TranslationReplacementInformation
+from ..models import (
+    AgentState, 
+    DiaryEntry, 
+    UnknownExpressionEntry, 
+    TranslationReplacementInformation,
+    PhraseRewritingEntry,
+    HistoryRecord
+)
 from ..db_handler import HandlerDairyDB
 from ..configs import SettingsVariables
 
@@ -39,6 +46,23 @@ def node_save_duckdb(state: AgentState, settings: SettingsVariables) -> AgentSta
             primary_id=None
         )
         seq_unknown_expression_entry.append(_unknown_expression_entry)
+    # end for
+
+    seq_phrase_rewriting_entry = []
+    seq_phrase_rewriting = processed.phrases_rewritten or []
+    for _phrase_rewriting in seq_phrase_rewriting:
+        _phrase_rewriting_entry = PhraseRewritingEntry(
+            expression_source=_phrase_rewriting.phrase_target,
+            expression_rewritten=_phrase_rewriting.phrase_rewritten,
+            remark_field=_phrase_rewriting.explanation,
+            language_source=language_source,
+            language_annotation=language_annotation,
+            created_at=created_at,
+            primary_id_DiaryEntry=diary_entry_primary_key,
+            primary_id=None
+        )
+        seq_phrase_rewriting_entry.append(_phrase_rewriting_entry)
+    # end for
     
     assert settings.GENERATION_DB_PATH is not None
     handler = HandlerDairyDB(settings.GENERATION_DB_PATH)
@@ -54,5 +78,10 @@ def node_save_duckdb(state: AgentState, settings: SettingsVariables) -> AgentSta
 
     for _entry in seq_unknown_expression_entry:
         handler.save_unknown_expression(_entry)
+    # end for
+
+    for _entry in seq_phrase_rewriting_entry:
+        handler.save_phrase_rewriting(_entry)
+    # end for
 
     return state    

@@ -6,6 +6,11 @@ from ..static import PossibleLevelRewriting
 from .generation_records import DiaryEntry
 from .vector_store_entry import ErrorRecord
 
+class ElementRewritingObject(BaseModel):
+    phrase_target: str
+    phrase_rewritten: str
+    explanation: str
+
 class TaskParameterConfig(BaseModel):
     is_execute: bool = True
     max_tokens: int = 512
@@ -47,6 +52,7 @@ class ProcessedOutputInformation(BaseModel):
     # fields used for the RAG DB.
     retrieved_context: str = Field(description="Retrieved context from the vector store.")
     grammatical_errors_extracted: ty.List[ErrorRecord]
+    phrases_rewritten: ty.List[ElementRewritingObject]
     
 
 # --- Define State dictionary ---
