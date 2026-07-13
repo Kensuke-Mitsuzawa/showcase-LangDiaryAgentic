@@ -7,10 +7,9 @@ from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, System
 from langchain_core.outputs import ChatResult, ChatGeneration
 from langchain_core.embeddings import Embeddings
 
-from ..configs import settings
-from .base import ClientEmbeddingModel, ClientLLM
+from ..configs import SettingsVariables
+from .base import ClientEmbeddingModel, ClientLLM, GenerationParameter
 
-assert settings.Server_API_Endpoint is not None
 
 
 logger = logging.getLogger(__name__)
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class CustomOllamaEmbeddings(ClientEmbeddingModel, Embeddings):
     def __init__(self, 
-                 base_url: str = settings.Server_API_Endpoint, 
+                 base_url: str, 
                  model: str = "all-minilm"):
         self.base_url = base_url
         self.model = model
@@ -68,8 +67,8 @@ class CustomOllamaEmbeddings(ClientEmbeddingModel, Embeddings):
 
 
 class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
-    api_url: str = settings.Server_API_Endpoint # Default Ollama URL
-    model_name: str = settings.MODEL_NAME_Primary # You must specify the model tag here
+    api_url: str
+    model_name: str
 
     @property
     def _llm_type(self) -> str:
@@ -84,6 +83,28 @@ class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
             return True
         except Exception:
             return False
+        
+    def get_available_models(self) -> List[str]:
+        """
+        Fetches a list of all models currently available on the Ollama server.
+        Endpoint: GET /api/tags
+        """
+        try:
+            # Request the list of models from the Ollama tags endpoint
+            response = requests.get(f"{self.api_url}/api/tags")
+            response.raise_for_status()
+            
+            data = response.json()
+            # Ollama returns a dict with a "models" key containing a list of model objects
+            models_info = data.get("models", [])
+            
+            # Extract only the names (e.g., 'qwen2.5:3b') from the metadata
+            model_names = [m.get("name") for m in models_info if "name" in m]
+            return model_names
+
+        except Exception as e:
+            logger.error(f"Error fetching models from {self.api_url}: {e}")
+            return []        
 
     def _generate(
         self,
@@ -91,7 +112,17 @@ class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
         stop: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        
+
+        model_name: str
+        if "model_name" not in kwargs:
+            model_name = self.model_name
+        else:
+            model_name = self.model_name
+        # end if
+        kwargs['model_name'] = model_name
+
+        generation_params = GenerationParameter(**kwargs)
+
         # -------------------------------------------------------
         # STEP 1: Convert LangChain Messages -> Ollama JSON
         # -------------------------------------------------------
@@ -112,19 +143,23 @@ class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
         # STEP 2: Prepare Payload (Ollama Specifics)
         # -------------------------------------------------------
         # Ollama puts hyperparameters inside an 'options' dict
+        enable_thinking: bool = generation_params.enable_thinking
+        assert isinstance(enable_thinking, bool)
+
         options = {
-            "temperature": kwargs.get("temperature", 0.7),
+            "temperature": generation_params.temperature,
             # Note: Ollama uses 'num_predict' for max tokens, not 'max_length'
-            "num_predict": kwargs.get("max_tokens", kwargs.get("max_length", 512)), 
-            "top_p": kwargs.get("top_p", 0.9),
+            "num_predict": generation_params.max_tokens,
+            "top_p": generation_params.top_p,
+            "think": enable_thinking
         }
 
         # Add stop tokens if provided
-        if stop:
-            options["stop"] = stop
+        if generation_params.stop:
+            options["stop"] = generation_params.stop
 
         payload = {
-            "model": self.model_name,
+            "model": model_name,
             "messages": ollama_formatted_chat,
             "stream": False,  # We want a single JSON response
             "options": options
@@ -170,7 +205,7 @@ class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
             response_metadata={
                 "finish_reason": finish_reason,
                 "token_usage": token_usage,
-                "model_name": self.model_name
+                "model_name": model_name
             }
         )
 

@@ -12,24 +12,33 @@ from pydantic import BaseModel
 
 from flask import Flask, render_template, abort, redirect, url_for, request, jsonify
 
-from lang_diary_agentic.graph import init_graph, TaskParameterConfig
+# from lang_diary_agentic.graph import init_graph, TaskParameterConfig
+from lang_diary_agentic.interface import run_pipeline
 from lang_diary_agentic.module_fetch_data_viewer import fetch_grammatical_errors
 from lang_diary_agentic.vector_store import get_vector_store
 
 from lang_diary_agentic.models.generation_records import UnknownExpressionEntry
 from lang_diary_agentic.module_post_edit import DiaryVersionManager
 from lang_diary_agentic.db_handler import HandlerDairyDB
-from lang_diary_agentic.configs import settings
+from lang_diary_agentic.configs import SettingsVariables
 from lang_diary_agentic.static import PossibleLevelRewriting
+from lang_diary_agentic.models import TaskParameterConfig, AgentState, DiaryEntry, ParameterConfig
+
+from lang_diary_agentic.module_agents import (
+    node_save_duckdb
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
 # Initialize graph once at startup
 print("Initializing Graph...")
-app_graph = init_graph()
+# app_graph = init_graph()
 
 app = Flask(__name__)
+
+# TODO: loading the .env file and set to `SettingsVariables`.
+settings = SettingsVariables()
 
 DB_PATH = settings.GENERATION_DB_PATH
 assert DB_PATH is not None
@@ -41,6 +50,7 @@ assert ChromDB_PATH is not None
 # --- IN-MEMORY JOB STORE ---
 # In a real production app, use Redis/Database. For a single-user app, this dict is fine.
 # Structure: { "job_id": { "status": "processing" | "completed" | "error", "result": ... } }
+Path(settings.DB_BASE_DIR).mkdir(parents=True, exist_ok=True)
 JOBS = tinydb.TinyDB(Path(settings.DB_BASE_DIR) / "status_db.json")
 
 PossibleSattus = ty.Literal['completed', 'error', 'processing']
@@ -89,10 +99,38 @@ def process_diary_background(job_id: str, form_data: ty.Dict, status_record: Sta
         logger.info(f"[{job_id}] Starting background task...")
         
         # SIMULATE HEAVY WORK (Replace this with your actual app_graph.invoke)
-        result = app_graph.invoke(form_data) 
+        # result = app_graph.invoke(form_data) 
+        diary_entry = DiaryEntry(
+            date_diary=str(date.today()),
+            language_source=form_data["lang_diary_body"],
+            language_annotation=form_data["lang_annotation"],
+            title_diary=form_data["title_diary"],
+            diary_original=form_data["draft_text"],
+            level_rewriting=form_data["level_rewriting"],
+            primary_id=form_data.get("primary_id_DiaryEntry")
+        )
+        
+        parameter_config_llm = ParameterConfig(
+            config_translator=form_data.get("config_translator"),
+            config_archivist=form_data.get("config_archivist"),
+            config_rewriter=form_data.get("config_rewriter"),
+            config_reviewer=form_data.get("config_reviewer")
+        )
+
+        state_initial = AgentState(
+            diary_entry_input=diary_entry,
+            parameter_config_llm=parameter_config_llm
+        )
+
+        state_final = run_pipeline(state=state_initial, settings=settings)
         
         status_record.status = "completed"
         status_record.message = "Analysis finished successfully."
+
+        # saving the result to the duckdb.
+        node_save_duckdb(state_final, settings)
+
+
         # UPDATE JOB STATUS
         Q = tinydb.Query()
         _res = JOBS.get(Q.job_id == status_record.job_id)
@@ -116,8 +154,39 @@ def process_diary_background(job_id: str, form_data: ty.Dict, status_record: Sta
 
 
 # --- VIEW 2: Diary Detail ---
-@app.route('/diary/<diary_id>/<unknown_expression_id>/delete')
-def delete_unknown_expression(diary_id, unknown_expression_id, methods=['GET']):
+@app.route('/diary/<diary_id>/<unknown_expression_id>/add_remark', methods=['POST'])
+def post_remark_to_unknown_expression(diary_id: str,
+                                      unknown_expression_id: str):
+    handler = HandlerDairyDB(DB_PATH)
+    
+    db_con = duckdb.connect(DB_PATH)
+    # check if the record exists
+    sql_check = "SELECT count(*) FROM unknown_expressions WHERE primary_id = ?"
+    db_con.execute(sql_check, (unknown_expression_id, ))
+    _record_count = db_con.fetchone()
+
+    if _record_count is None or _record_count[0] == 0:
+        return redirect(url_for('diary_detail', diary_id=diary_id))
+    # end if
+
+    remark = request.form.get('remark')
+    remark = None if remark == '' else remark
+
+    if remark is None:
+        return redirect(url_for('diary_detail', diary_id=diary_id))
+    # end if
+
+
+    # update the table
+    db_con.execute("UPDATE unknown_expressions SET remark_field = ? WHERE primary_id = ?", (remark, unknown_expression_id, ))
+    db_con.commit()
+    db_con.close()
+
+    return redirect(url_for('diary_detail', diary_id=diary_id))
+
+
+@app.route('/diary/<diary_id>/<unknown_expression_id>/delete', methods=['GET'])
+def delete_unknown_expression(diary_id: str, unknown_expression_id):
     handler = HandlerDairyDB(DB_PATH)
 
     entries = handler.fetch_dairy_entry_language(daiary_primary_key=diary_id)
@@ -155,6 +224,8 @@ def add_expression_logic(diary_id):
     # 1. Get the data from the form
     expression = request.form.get('expression_original')
     translation = request.form.get('expression_translation')
+    remark = request.form.get('remark')
+    remark = None if remark == '' else remark
 
     entries = handler.fetch_dairy_entry_language(daiary_primary_key=diary_id)
     assert entries is not None
@@ -165,6 +236,7 @@ def add_expression_logic(diary_id):
         expression_translation=translation,
         span_original=(-1, -1),
         span_translation=(-1, -1),
+        remark_field=remark,
         language_source=entries[0].language_source,
         language_annotation=entries[0].language_annotation,
         created_at=datetime.now(),
@@ -205,6 +277,7 @@ def update_diary_text(diary_id):
         return redirect(url_for('diary_detail', diary_id=diary_id))
     # end if
 
+    # TODO: get the record id.
     entries = handler.fetch_dairy_entry_language(daiary_primary_key=diary_id)
     assert entries is not None
     
@@ -234,7 +307,7 @@ def update_diary_text(diary_id):
 
 
 @app.route('/diary/<diary_id>')
-def diary_detail(diary_id, methods=['GET']):
+def diary_detail(diary_id):
     handler = HandlerDairyDB(DB_PATH)
     
     entries = handler.fetch_dairy_entry_language(daiary_primary_key=diary_id)
@@ -255,14 +328,17 @@ def diary_detail(diary_id, methods=['GET']):
     diary = entries[0]
     # ---- END: fetch unknown expressions ----
 
-    # ---- fetch grammatical errors ----
     try:
-        chroma_db = get_vector_store(ChromDB_PATH)
+        from lang_diary_agentic.llm_clients import get_embedding_model
+        emb_client = get_embedding_model(settings)
+        chroma_db = get_vector_store(emb_client, settings)
         seq_error_info = fetch_grammatical_errors(diary.primary_id, chroma_db)
         seq_error_info = [_r.model_dump() for _r in seq_error_info]
+        
     except Exception as e:
         logger.error(f"Error fetching grammatical errors: {e}")
         seq_error_info = []
+        
     # end try
     # ---- END: fetch grammatical errors ----
 
@@ -271,11 +347,34 @@ def diary_detail(diary_id, methods=['GET']):
     form_data = {
         'input_rewriting': diary.diary_rewritten
     }
-    return render_template('details.html', 
+
+    return render_template('diary_details.html', 
                            diary=diary.model_dump(), 
                            expressions=expressions, 
                            errors=seq_error_info,
                            form=form_data)
+
+
+@app.route('/api/diary/<diary_id>/rewritten_phrases', methods=['GET'])
+def api_get_rewritten_phrases(diary_id: str):
+    handler = HandlerDairyDB(DB_PATH)
+    phrases = handler.fetch_phrase_rewriting(diary_id)
+    if phrases is None:
+        phrases = []
+    return jsonify([
+        {
+            "primary_id": p.primary_id,
+            "primary_id_DiaryEntry": p.primary_id_DiaryEntry,
+            "expression_source": p.expression_source,
+            "expression_rewritten": p.expression_rewritten,
+            "language_source": p.language_source,
+            "language_annotation": p.language_annotation,
+            "remark_field": p.remark_field,
+            "created_at": p.created_at.isoformat() if hasattr(p.created_at, 'isoformat') else str(p.created_at)
+        }
+        for p in phrases
+    ])
+
 
 # --- vocabulary list ---
 
@@ -339,18 +438,21 @@ def make_diary_invaid(diary_id: str):
 @app.route('/api/status/<job_id>')
 def api_check_status(job_id):
     """API endpoint for JavaScript to poll."""
-    job = JOBS.get(job_id)
+    q = tinydb.Query()
+    job = JOBS.get(q.job_id == job_id)
     if not job:
         return jsonify({"status": "unknown"}), 404
     return jsonify(job)
 
 
-@app.route('/api/status/<diary_id>')
+@app.route('/api/status/diary/<diary_id>')
 def api_dialy_status(diary_id):
     """API endpoint for JavaScript to poll."""
     q = tinydb.Query()
     output = JOBS.search(q.diary_id == diary_id)
-    r = StatusRecord(**output)
+    if not output:
+        return jsonify({"status": "unknown"}), 404
+    r = StatusRecord(**output[0])
 
     if r.status == "completed":
         _emoji = "✅"
@@ -443,6 +545,22 @@ def analyze_entry():
         diary_id=primary_id_DiaryEntry,
         message='')
     JOBS.insert(r.model_dump())
+
+    # Save initial entry to DuckDB
+    handler = HandlerDairyDB(DB_PATH)
+    initial_entry = DiaryEntry(
+        date_diary=diary_date,
+        language_source=param_obj['lang_diary_body'],
+        language_annotation=param_obj['lang_annotation'],
+        title_diary=param_obj['title_diary'],
+        diary_original=param_obj['draft_text'],
+        level_rewriting=param_obj['level_rewriting'],
+        created_at=created_at,
+        primary_id=primary_id_DiaryEntry,
+        current_version=1,
+        is_show=True
+    )
+    handler.save_diary_entry(initial_entry)
 
     # 4. Start the background thread
     # daemon=True means this thread dies if the main app crashes (good for cleanup)

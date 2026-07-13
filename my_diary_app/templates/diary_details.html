@@ -60,23 +60,6 @@
 
     <div id="unknown_expressions">
         <h3>❓ Unknown Expressions</h3>
-        <div id="list_unknown_expressions">
-            {% for expr in expressions %}
-                <div class="row mt-4">
-                    <div class="alert alert-success py-2 col-md-6">
-                        <strong>{{ expr['expression'] }}</strong> &rarr; {{ expr['expression_translation'] }}
-                    </div>
-                    
-                    <div id="expression-delete" class="col-md-6">
-                        <a href="{{ url_for('delete_unknown_expression', diary_id=diary.primary_id, unknown_expression_id=expr.primary_id) }}" 
-                        class="btn btn-danger px-5" onclick="return confirm('Are you sure?')">Delete</a>
-                    </div>
-                </div>
-            {% else %}
-            <p>No unknown expressions found for this entry.</tr>
-            {% endfor %}
-        </div>
-
         <div id="add_unknown_expressions">
             <!-- according element -->
             <div class="accordion mb-4 col-md-6" id="configAccordion">
@@ -94,6 +77,8 @@
                                     <input type="text" name="expression_original" class="form-control" placeholder="[word]" value="" required>
                                     <label class="form-label fw-bold">translation</label>
                                     <input type="text" name="expression_translation" class="form-control" placeholder="translation" value="" required>
+                                    <label class="form-label fw-bold">reamrk</label>
+                                    <input type="text" name="remark" class="form-control" placeholder="your arbitrary comment" value="" required>
                                 </div>
                                 
                                 <button type="submit" class="btn btn-primary px-5">add</button>
@@ -102,9 +87,49 @@
                     </div>
                 </div>
             </div>
-            <!-- according element -->
+        </div>
+        <!-- according element -->
+        <div id="list_unknown_expressions">
+            {% for expr in expressions %}
+            <div class="row mt-4">
+                <div class="alert alert-success py-2 col-md-6">
+                    <strong>{{ expr['expression'] }}</strong> &rarr; {{ expr['expression_translation'] }}
+                    {% if expr['remark_field'] %}
+                        <span class="ms-2">📌: {{ expr['remark_field'] }}</span>
+                    {% endif %}                        
+                </div>
+                
+                <div id="expression-delete" class="col-md-6">
+                    <a href="{{ url_for('delete_unknown_expression', diary_id=diary.primary_id, unknown_expression_id=expr.primary_id) }}" 
+                    class="btn btn-danger px-5" onclick="return confirm('Are you sure?')">Delete</a>
+                </div>
+
+                <div class="mt-2" style="max-width: 600px;">
+                    <form action="{{ url_for('post_remark_to_unknown_expression', diary_id=diary.primary_id, unknown_expression_id=expr['primary_id']) }}" 
+                        method="POST" 
+                        class="d-flex align-items-center"
+                        onsubmit="document.getElementById('loading').style.display='block'">
+                        
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text fw-bold">Remark</span>
+                            
+                            <input type="text" name="remark" class="form-control" 
+                                placeholder="Add a note..." 
+                                value="{% if expr['remark_field'] and expr['remark_field'] != 'None' %}{{ expr['remark_field'] }}{% endif %}" 
+                                required>
+                            
+                            <button type="submit" class="btn btn-primary">Save</button>
+                        </div>
+                    </form>
+                </div>
+            {% else %}
+                <p>No unknown expressions found for this entry.</tr>
+            {% endfor %}
+            </div>
         </div>
     </div>
+
+    <hr class="my-5">
 
     <div id="grammatical_errors">
         <h3>⚠️ Grammatical Errors</h3>
@@ -118,6 +143,77 @@
             </div>
         {% endfor %}
     </div>
+    <hr class="my-5">
+
+    <div id="rewritten_phrases" class="mb-5">
+        <h3 class="mb-3">✨ Rewritten Phrases Suggestions</h3>
+        
+        <!-- Form to trigger GET request to API method -->
+        <form id="fetch_phrases_form" class="mb-4">
+            <button type="button" class="btn btn-info text-white px-4 py-2 shadow-sm" id="fetch_phrases_btn">
+                Fetch Rewritten Phrases
+            </button>
+        </form>
+
+        <div id="phrases_container" class="row">
+            <!-- Dynamic elements will be inserted here -->
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('fetch_phrases_btn').addEventListener('click', function() {
+            const container = document.getElementById('phrases_container');
+            container.innerHTML = `
+                <div class="col-12 text-center py-4">
+                    <div class="spinner-border text-info" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            `;
+            
+            fetch("{{ url_for('api_get_rewritten_phrases', diary_id=diary['primary_id']) }}")
+                .then(res => {
+                    if (!res.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    container.innerHTML = '';
+                    if (data.length === 0) {
+                        container.innerHTML = `
+                            <div class="col-12">
+                                <p class="text-muted bg-light p-3 rounded">No rewritten phrases found for this entry.</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    data.forEach(phrase => {
+                        const col = document.createElement('div');
+                        col.className = 'col-md-6 mb-3';
+                        col.innerHTML = `
+                            <div class="card border-info shadow-sm h-100">
+                                <div class="card-body">
+                                    <h5 class="card-title text-info fw-bold">${phrase.expression_source}</h5>
+                                    <p class="card-text"><strong>Rewritten:</strong> ${phrase.expression_rewritten}</p>
+                                    ${phrase.remark_field ? `<p class="card-text text-muted mb-0"><small>💡 ${phrase.remark_field}</small></p>` : ''}
+                                </div>
+                            </div>
+                        `;
+                        container.appendChild(col);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching rewritten phrases:', error);
+                    container.innerHTML = `
+                        <div class="col-12">
+                            <div class="alert alert-danger">Failed to load rewritten phrases.</div>
+                        </div>
+                    `;
+                });
+        });
+    </script>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

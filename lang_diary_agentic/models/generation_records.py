@@ -1,3 +1,4 @@
+from sqlalchemy.sql.expression import desc
 import typing as ty
 import hashlib
 from pydantic import BaseModel, Field
@@ -5,20 +6,32 @@ from datetime import datetime
 
 from ..static import PossibleLevelRewriting
 
+
+"""Module to manage DB-records. These records are used for the web-app.
+"""
+
 class DiaryEntry(BaseModel):
     date_diary: str
     language_source: str
     language_annotation: str
-    diary_original: str
-    diary_replaced: str
-    diary_rewritten: str
-    level_rewriting: PossibleLevelRewriting
-    model_id_tutor: str
+
     title_diary: str
-    current_version: int
-    created_at: datetime = Field(default_factory=datetime.now)    
-    primary_id: ty.Optional[str] = None
-    is_show: bool
+    diary_original: str
+    level_rewriting: PossibleLevelRewriting
+    
+    # model_id_tutor: str
+
+    current_version: ty.Optional[int] = Field(default_factory=lambda: 1)
+    created_at: datetime = Field(default_factory=lambda: datetime.now())    
+    primary_id: ty.Optional[str] = Field(default_factory=lambda: None)
+    is_show: bool = Field(default_factory=lambda: True)
+
+    diary_replaced: ty.Optional[str] = Field(
+        default_factory=lambda: "", 
+        description="Field used for the replaced with literal translations.")
+    diary_rewritten: ty.Optional[str] = Field(
+        default_factory=lambda: "",
+        description="Field used for the rewritten diary text with well-suitable expressions.")
 
     def model_post_init(self, context: ty.Any) -> None:
         if self.primary_id is None:
@@ -35,6 +48,7 @@ class UnknownExpressionEntry(BaseModel):
     span_translation: ty.Tuple[int, int]
     language_source: str
     language_annotation: str
+    remark_field: ty.Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     primary_id_DiaryEntry: str = Field(description="primary_key of DiaryEntry table.")
     primary_id: ty.Optional[str] = None
@@ -48,6 +62,25 @@ class UnknownExpressionEntry(BaseModel):
             self.primary_id = hex_dig
         # end if
 # end class
+
+
+class PhraseRewritingEntry(BaseModel):
+    expression_source: str
+    expression_rewritten: str
+    language_source: str
+    language_annotation: str
+    remark_field: ty.Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    primary_id_DiaryEntry: str = Field(description="primary_key of DiaryEntry table.")
+    primary_id: ty.Optional[str] = None
+
+    def model_post_init(self, context: ty.Any) -> None:
+        if self.primary_id is None:
+            datetime_str = self.created_at.isoformat()
+            key_combination = f"{self.primary_id_DiaryEntry}_{self.expression_source}_{datetime_str}"
+            hashlib_object = hashlib.sha256(key_combination.encode())
+            hex_dig = hashlib_object.hexdigest()
+            self.primary_id = hex_dig
 
 
 class HistoryRecord(BaseModel):

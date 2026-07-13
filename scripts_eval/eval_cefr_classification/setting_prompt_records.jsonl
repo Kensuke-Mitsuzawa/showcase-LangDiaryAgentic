@@ -1,0 +1,1 @@
+{"prompt_name": "cefr_classification_v1", "prompt_template": "You are a CEFR evaluator.\nAnalyze the following text and return the CEFR level in XML format:\n<analysis>\n<cefr>LEVEL</cefr>\n</analysis>\n\nText: \"{text}\""}
