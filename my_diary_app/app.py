@@ -276,6 +276,7 @@ def update_diary_text(diary_id):
         return redirect(url_for('diary_detail', diary_id=diary_id))
     # end if
 
+    # TODO: get the record id.
     entries = handler.fetch_dairy_entry_language(daiary_primary_key=diary_id)
     assert entries is not None
     
@@ -305,7 +306,7 @@ def update_diary_text(diary_id):
 
 
 @app.route('/diary/<diary_id>')
-def diary_detail(diary_id, methods=['GET']):
+def diary_detail(diary_id):
     handler = HandlerDairyDB(DB_PATH)
     
     entries = handler.fetch_dairy_entry_language(daiary_primary_key=diary_id)
@@ -332,9 +333,11 @@ def diary_detail(diary_id, methods=['GET']):
         chroma_db = get_vector_store(emb_client, settings)
         seq_error_info = fetch_grammatical_errors(diary.primary_id, chroma_db)
         seq_error_info = [_r.model_dump() for _r in seq_error_info]
+        
     except Exception as e:
         logger.error(f"Error fetching grammatical errors: {e}")
         seq_error_info = []
+        
     # end try
     # ---- END: fetch grammatical errors ----
 
@@ -343,6 +346,7 @@ def diary_detail(diary_id, methods=['GET']):
     form_data = {
         'input_rewriting': diary.diary_rewritten
     }
+
     return render_template('diary_details.html', 
                            diary=diary.model_dump(), 
                            expressions=expressions, 
