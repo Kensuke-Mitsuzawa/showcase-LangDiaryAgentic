@@ -4,7 +4,7 @@ import pycountry
 import typing
 
 PossibleChoiceModeDeployment = typing.Literal["server_ollama", "server_custom_hf", "cloud_api"]
-PossibleCloudLLMProvider = typing.Literal['openai', 'google']
+PossibleCloudLLMProvider = typing.Literal['openai', 'gemini']
 PossibleLevelRewriting = typing.Literal['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 
 # ---- list of language codes ----

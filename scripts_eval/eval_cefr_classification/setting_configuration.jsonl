@@ -1,0 +1,8 @@
+{"llm_configuration_id": "conf_qwen_2-5-7-pure", "model_id_primary": "Qwen/Qwen2.5-7B-Instruct", "model_id_assistant": null, "strategy_decoding": "greedy", "max_new_token": 512}
+{"llm_configuration_id": "conf_qwen_2-5-7-speculative", "model_id_primary": "Qwen/Qwen2.5-7B-Instruct", "model_id_assistant": "Qwen/Qwen2.5-0.5B-Instruct", "strategy_decoding": "greedy", "max_new_token": 512}
+{"llm_configuration_id": "conf_meta_llama_3-1_8B-pure", "model_id_primary": "meta-llama/Llama-3.1-8B-Instruct", "model_id_assistant": null, "strategy_decoding": "greedy", "max_new_token": 512}
+{"llm_configuration_id": "conf_meta_llama_3-1_8B-speculative", "model_id_primary": "meta-llama/Llama-3.1-8B-Instruct", "model_id_assistant": "meta-llama/Llama-3.1-8B-Instruct", "strategy_decoding": "greedy", "max_new_token": 512}
+{"llm_configuration_id": "conf_gemma_2-9b_it-pure", "model_id_primary": "google/gemma-2-9b-it", "model_id_assistant": null, "strategy_decoding": "greedy", "max_new_token": 512}
+{"llm_configuration_id": "conf_gemma_2-9b_it-speculative", "model_id_primary": "google/gemma-2-9b-it", "model_id_assistant": "google/gemma-2-9b-it", "strategy_decoding": "greedy", "max_new_token": 512}
+{"llm_configuration_id": "conf_phi-4-reasoning-pure", "model_id_primary": "microsoft/Phi-4-reasoning", "model_id_assistant": null, "strategy_decoding": "greedy", "max_new_token": 512}
+{"llm_configuration_id": "conf_phi-4-reasoning-speculative", "model_id_primary": "microsoft/Phi-4-reasoning", "model_id_assistant": "microsoft/Phi-4-mini-instruct", "strategy_decoding": "greedy", "max_new_token": 512}

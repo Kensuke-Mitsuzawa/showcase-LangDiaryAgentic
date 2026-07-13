@@ -14,16 +14,28 @@ DOTENV = Path(__file__).parent.parent / ".env"
 assert Path(DOTENV).exists(), f".env file not found at {DOTENV}."
 
 
-class Settings(BaseSettings):
+ConfigDefaultSetting = {
+    'gemini': {
+        'Server_API_Endpoint': 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        'MODEL_NAME_Primary': 'gemini-3.5-flash',
+        'MODEL_NAME_Embedding': 'models/gemini-embedding-2'
+    }
+}
+
+
+class SettingsVariables(BaseSettings):
+
     # Define variables with types and default values
     APP_NAME: str = "LinguaLog"
 
-    Mode_Deployment: static.PossibleChoiceModeDeployment = "server_custom_hf"
+    Mode_Deployment: static.PossibleChoiceModeDeployment = "cloud_api"
+    Cloud_API_Provider: static.PossibleCloudLLMProvider = "gemini"
+
     Server_API_Endpoint: ty.Optional[str] = None
     Cloud_API_Token: ty.Optional[str] = None
 
-    MODEL_NAME_Embedding: str = "all-MiniLM-L6-v2"
-    MODEL_NAME_Primary: str = "Qwen/Qwen2.5-7B-Instruct"
+    MODEL_NAME_Primary: str
+    MODEL_NAME_Embedding: str    
 
     DB_BASE_DIR: str = Field(default_factory=lambda: Path(__file__).resolve().parent.parent.as_posix())
     DB_NAME_GENERATION: str = "diary_log.duckdb"
@@ -43,8 +55,3 @@ class Settings(BaseSettings):
         elif self.Mode_Deployment in ('server_custom_hf', 'server_ollama'):
             assert self.Server_API_Endpoint is not None, "`Server_API_Endpoint` must be give."
 # end if
-
-
-# Create a single instance to use across your app
-settings = Settings()
-logger.info(f'loaded settings: {settings}')

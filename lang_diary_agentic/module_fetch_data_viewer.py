@@ -6,7 +6,6 @@ from pydantic import ValidationError
 
 from langchain_chroma import Chroma
 
-from .configs import settings
 from .db_handler import HandlerDairyDB
 from .models.generation_records import DiaryEntry, UnknownExpressionEntry
 from .models.vector_store_entry import ErrorRecord
@@ -24,11 +23,15 @@ def fetch_grammatical_errors(
     seq_documents = d_record_corrections['documents']
     assert len(seq_metadata) == len(seq_documents)
     n_document = len(seq_metadata)
-
+    
     seq_correction_records = []
     for i in range(n_document):
         try:
-            _record = ErrorRecord(**seq_metadata[i])
+            _dict_error_record = seq_metadata[i]
+            if "explanation" not in _dict_error_record:
+                _dict_error_record["explanation"] = ""
+            # end if
+            _record = ErrorRecord(**_dict_error_record)
             seq_correction_records.append(_record)
         except Exception:
             pass

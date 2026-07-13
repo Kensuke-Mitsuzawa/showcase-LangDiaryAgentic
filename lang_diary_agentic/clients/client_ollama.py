@@ -7,10 +7,9 @@ from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, System
 from langchain_core.outputs import ChatResult, ChatGeneration
 from langchain_core.embeddings import Embeddings
 
-from ..configs import settings
+from ..configs import SettingsVariables
 from .base import ClientEmbeddingModel, ClientLLM, GenerationParameter
 
-assert settings.Server_API_Endpoint is not None
 
 
 logger = logging.getLogger(__name__)
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class CustomOllamaEmbeddings(ClientEmbeddingModel, Embeddings):
     def __init__(self, 
-                 base_url: str = settings.Server_API_Endpoint, 
+                 base_url: str, 
                  model: str = "all-minilm"):
         self.base_url = base_url
         self.model = model
@@ -68,8 +67,8 @@ class CustomOllamaEmbeddings(ClientEmbeddingModel, Embeddings):
 
 
 class CustomOllamaServerLLM(ClientLLM, BaseChatModel):
-    api_url: str = settings.Server_API_Endpoint # Default Ollama URL
-    model_name: str = settings.MODEL_NAME_Primary # You must specify the model tag here
+    api_url: str
+    model_name: str
 
     @property
     def _llm_type(self) -> str:
