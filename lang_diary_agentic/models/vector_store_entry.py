@@ -1,3 +1,4 @@
+import typing as ty
 from pydantic import BaseModel, Field
 from typing import Literal, Any
 from ..static import Languages_Code
@@ -5,9 +6,10 @@ from ..static import Languages_Code
 
 class ErrorRecord(BaseModel):
     """Schema for an error entry in the database."""
-    # primary_id_DiaryEntry: str = Field(
-    #     description="field `primary_id` of the DiaryEntry."
-    # )
+    primary_id_DiaryEntry: ty.Optional[str] = Field(
+        description="field `primary_id` of the DiaryEntry.",
+        default_factory=lambda: None
+    )
     
     model_id_embedding: str = Field(description="LLM name used for the embedding.")
 

@@ -15,6 +15,20 @@ from .configs import SettingsVariables
 
 logger = logging.getLogger(__name__)
 
+def get_embedding_model(settings: SettingsVariables):
+    if settings.Mode_Deployment == "cloud_api":
+        return GeminiEmbeddings(
+            api_key=settings.Cloud_API_Token,
+            model=settings.MODEL_NAME_Embedding or "models/gemini-embedding-2"
+        )
+    elif settings.Mode_Deployment == "server_custom_hf":
+        return CustomHFServerEmbeddings(api_url=settings.Server_API_Endpoint)
+    elif settings.Mode_Deployment == "server_ollama":
+        return CustomOllamaEmbeddings(settings.Server_API_Endpoint)
+    else:
+        raise ValueError(f"Invalid Mode_Deployment: {settings.Mode_Deployment}")
+
+
 def server_custom_hf(settings: SettingsVariables) -> ty.Tuple[CustomHFServerLLM, CustomHFServerEmbeddings]:
     """Helper to load a model pipeline"""
     assert settings.Server_API_Endpoint is not None

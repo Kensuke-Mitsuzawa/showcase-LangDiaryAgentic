@@ -30,7 +30,8 @@ def get_vector_store(
 
 
 def add_error_logs(records: List[ErrorRecord],
-                   client_embedding_model_server: PossibleEmbeddingHandler):
+                   client_embedding_model_server: PossibleEmbeddingHandler,
+                   settings: SettingsVariables):
     """
     Save a batch of error logs to memory.
     Efficiently inserts multiple records in one DB transaction.
@@ -38,7 +39,7 @@ def add_error_logs(records: List[ErrorRecord],
     if not records:
         return
 
-    db = get_vector_store(client_embedding_model_server)
+    db = get_vector_store(client_embedding_model_server, settings)
     
     # Prepare lists for batch insertion
     batch_texts = []

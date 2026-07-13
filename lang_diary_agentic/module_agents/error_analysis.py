@@ -117,6 +117,7 @@ def node_error_analysis(
     seq_error_records: ty.List[ErrorRecord] = []
     for err in response_obj.seq_error_objects:
         err_record = ErrorRecord(
+            primary_id_DiaryEntry=state.diary_entry_input.primary_id,
             model_id_embedding=settings.MODEL_NAME_Embedding,
             language_diary_text=state.diary_entry_input.language_source,
             language_annotation_text=state.diary_entry_input.language_annotation,
@@ -129,6 +130,12 @@ def node_error_analysis(
 
         seq_error_records.append(err_record)
     # end for
+
+    if seq_error_records:
+        from ..llm_clients import get_embedding_model
+        from ..vector_store import add_error_logs
+        emb_client = get_embedding_model(settings)
+        add_error_logs(seq_error_records, emb_client, settings)
 
     return state.model_copy(update={
         "processed_output": state.processed_output.model_copy(

@@ -7,28 +7,25 @@ from ..configs import SettingsVariables
 
 logger = logging.getLogger(__name__)
 
-def node_save_duckdb(state: AgentState, settings: SettingsVariables):
+def node_save_duckdb(state: AgentState, settings: SettingsVariables) -> AgentState:
     """New Node: Save everything to DuckDB"""
     logger.info("--- [4] Saving to DuckDB ---")
     
-    # Use today's date if not provided
-    diary_date = state["diary_date"]
-    created_at = state["created_at"]
-
-    language_source = state.get("lang_diary_body", "Unknown")
-    language_source = "Unknown" if language_source is None else language_source
-
-    language_annotation = state.get("lang_annotation", "Unknown")
-    language_annotation = "Unknown" if language_annotation is None else language_annotation
-
-    diary_entry: DiaryEntry = state["diary_entry"]
-    
+    diary_entry = state.diary_entry_input
     diary_entry_primary_key = diary_entry.primary_id
     assert diary_entry_primary_key is not None
 
+    created_at = diary_entry.created_at
+    language_source = diary_entry.language_source or "Unknown"
+    language_annotation = diary_entry.language_annotation or "Unknown"
+
+    processed = state.processed_output
+    if processed is None:
+        logger.warning("No processed output to save.")
+        return state
+
     seq_unknown_expression_entry = []
-    seq_bracket_text = state['translation_pair_extracted']
-    _d_expression: TranslationReplacementInformation
+    seq_bracket_text = processed.translation_pair_extracted or []
     for _d_expression in seq_bracket_text:
         _unknown_expression_entry = UnknownExpressionEntry(
             expression=_d_expression.expression_original,
@@ -48,12 +45,14 @@ def node_save_duckdb(state: AgentState, settings: SettingsVariables):
 
     conn = duckdb.connect(settings.GENERATION_DB_PATH)
     conn.execute("UPDATE diary_entries SET diary_replaced = ?, diary_rewritten = ? WHERE primary_id = ?", (
-        state["final_response"],
-        state["suggestion_response"],
-        diary_entry.primary_id
+        processed.diary_replaced,
+        processed.diary_rewritten,
+        diary_entry_primary_key
     ))
+    conn.commit()
+    conn.close()
 
     for _entry in seq_unknown_expression_entry:
         handler.save_unknown_expression(_entry)
 
-    return {}    
+    return state    

@@ -6,7 +6,6 @@ from pydantic import ValidationError
 
 from langchain_chroma import Chroma
 
-from .configs import settings
 from .db_handler import HandlerDairyDB
 from .models.generation_records import DiaryEntry, UnknownExpressionEntry
 from .models.vector_store_entry import ErrorRecord
