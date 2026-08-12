@@ -35,6 +35,7 @@ def node_detect_unknown_expressions(state: AgentState) -> AgentState:
         retrieved_context="",
         grammatical_errors_extracted=[],
         phrases_rewritten=[],
+        evaluation_current_level="NA"
     )
 
     state.processed_output = processed_output_info

@@ -9,6 +9,7 @@ import instructor
 
 from ..models import (
     AgentState,
+    PossibleLevelRewriting,
     ElementRewritingObject
 )
 from ..static import Iso693_code2natural_name
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class ResponseObjectAgent(BaseModel):
+    evaluation_current_level: PossibleLevelRewriting
     text_rewritten: str
     seq_element_rewriting: list[ElementRewritingObject]
 
@@ -30,35 +32,21 @@ def node_rewriter(state: AgentState, settings: SettingsVariables) -> AgentState:
     system_prompt_message = f"You are an expert editor of the {state.diary_entry_input.lang_diary_body} language."
 
     logger.info("--- Node: Rewriting ---")
-    # task_config = state["config_rewriter"]
-    # task_config = settings.task_config.rewriter
 
     if not state.is_processor_success:
         return state
     # end if
-
-    
-    # if not state["is_processor_success"]:
-    #     return {
-    #         "suggestion_response": ""
-    #     }
-    # if task_config.is_execute is False:
-    #     logger.info("SKip the tast since is_execute = False.")
-    #     return {
-    #         "suggestion_response": ""
-    #     }
-    
-    # lang_code_diary = state['lang_diary_body']
 
     prompt_content = (
         "# Task\n"
         f"Rewrite the given draft text in the {state.diary_entry_input.level_rewriting} level of the CEFR. \n" 
         f"The rewriting language must stick with language={state.diary_entry_input.language_source}\n"
         f'# Instruction\n'
-        f'1. scan the input text and extract the phrase that needs to be rewritten. Set the extracted phrase to `phrase_target`.\n'
-        f'2. rewrite the extracted phrase to be more natural and fluent in the level of {state.diary_entry_input.level_rewriting}. Set the rewritten phrase to `phrase_rewritten`.\n'
-        f'3. provide the explanation of the rewriting. Set the explanation to `explanation` written in {state.diary_entry_input.language_annotation}.\n'
-        f'4. Finally, set the rewritten text to the variable `text_rewritten`.'
+        f'1. evaluate the current level of the given text and set the evaluated level to `evaluation_current_level`.\n'
+        f'2. scan the input text and extract the phrase that needs to be rewritten. Set the extracted phrase to `phrase_target`.\n'
+        f'3. rewrite the extracted phrase to be more natural and fluent in the level of {state.diary_entry_input.level_rewriting}. Set the rewritten phrase to `phrase_rewritten`.\n'
+        f'4. provide the explanation of the rewriting. Set the explanation to `explanation` written in {state.diary_entry_input.language_annotation}.\n'
+        f'5. Finally, set the rewritten text to the variable `text_rewritten`.'
         "# Input\n"
         f"{json.dumps(state.processed_output.diary_replaced)}"
     )
@@ -89,6 +77,7 @@ def node_rewriter(state: AgentState, settings: SettingsVariables) -> AgentState:
     return state.model_copy(update={
         "processed_output": state.processed_output.model_copy(
             update={
+                "evaluation_current_level": response_obj.evaluation_current_level,
                 "diary_rewritten": response_obj.text_rewritten,
                 "phrases_rewritten": response_obj.seq_element_rewriting,
             })

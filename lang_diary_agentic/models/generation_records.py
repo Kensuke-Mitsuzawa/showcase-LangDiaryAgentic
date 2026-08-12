@@ -32,6 +32,9 @@ class DiaryEntry(BaseModel):
     diary_rewritten: ty.Optional[str] = Field(
         default_factory=lambda: "",
         description="Field used for the rewritten diary text with well-suitable expressions.")
+    evaluation_current_level: ty.Optional[str] = Field(
+        default_factory=lambda: "",
+        description="Field used for the evaluated level category of the original diary entry.")
 
     def model_post_init(self, context: ty.Any) -> None:
         if self.primary_id is None:

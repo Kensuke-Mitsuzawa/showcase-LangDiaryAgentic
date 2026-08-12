@@ -20,7 +20,12 @@
         <div class="row mt-4">
             <div class="col-md-6">
                 <div class="diary-box">
-                    <h4>Your original draft</h4>
+                    <h4>
+                        Your original draft
+                        {% if diary['evaluation_current_level'] %}
+                            <span class="badge bg-secondary ms-2" style="font-size: 0.75rem;">Evaluated level: {{ diary['evaluation_current_level'] }}</span>
+                        {% endif %}
+                    </h4>
                     <div class="alert alert-success"><p>{{ diary['diary_original'] }}</p></div>
                 </div>
             </div>

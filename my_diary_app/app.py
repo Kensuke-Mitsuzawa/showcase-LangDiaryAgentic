@@ -33,7 +33,6 @@ logger = logging.getLogger()
 
 app = Flask(__name__)
 
-# TODO: loading the .env file and set to `SettingsVariables`.
 settings = SettingsVariables()
 
 logger.info(f"Path for the resource files: {settings.DB_BASE_DIR}")

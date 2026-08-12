@@ -7,6 +7,7 @@ from .generation_records import (
 )
 from .vector_store_entry import ErrorRecord
 from .states import (
+    PossibleLevelRewriting,
     TaskParameterConfig, 
     TranslationReplacementInformation, 
     AgentState,

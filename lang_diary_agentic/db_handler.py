@@ -103,7 +103,8 @@ class HandlerDairyDB():
                 model_id_tutor VARCHAR,
                 title_diary VARCHAR,
                 current_version INTEGER,
-                is_show BOOLEAN
+                is_show BOOLEAN,
+                evaluation_current_level VARCHAR
             );
         """)
         conn.close()

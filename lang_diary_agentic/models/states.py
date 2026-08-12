@@ -1,7 +1,5 @@
 import typing as ty
-from datetime import datetime
 from pydantic import BaseModel, Field
-from typing import TypedDict
 from ..static import PossibleLevelRewriting
 from .generation_records import DiaryEntry
 from .vector_store_entry import ErrorRecord
@@ -39,9 +37,6 @@ class ParameterConfig(BaseModel):
 class ProcessedOutputInformation(BaseModel):
     diary_replaced: str = Field(description="Draft text of the diary entry. A copy of the original input text.")
     diary_rewritten: str = Field(description="Draft text of the diary entry after the rewriting process.")
-
-    # final_response: str = Field(description="Final response from the diary-agents.")
-    # suggestion_response: str = Field(description="Suggestion response from the translator.")
     
     total_review: str
 
@@ -54,6 +49,7 @@ class ProcessedOutputInformation(BaseModel):
     grammatical_errors_extracted: ty.List[ErrorRecord]
     phrases_rewritten: ty.List[ElementRewritingObject]
     
+    evaluation_current_level: PossibleLevelRewriting
 
 # --- Define State dictionary ---
 class AgentState(BaseModel):
@@ -65,26 +61,3 @@ class AgentState(BaseModel):
     # signal to convey the task status
     is_processor_success: bool = False
     is_archivist_success: bool = False
-
-    # draft_text: str
-    # retrieved_context: str
-    # final_response: str
-    # suggestion_response: str
-    # unkown_expressions: ty.List[str]
-    # total_review: str
-    # translation_pair_extracted: ty.List[TranslationReplacementInformation]
-    # grammatical_errors_extracted: ty.List[ErrorRecord]
-    # # meta-information
-    # lang_annotation: ty.Optional[str]
-    # lang_diary_body: ty.Optional[str]
-    # level_rewriting: PossibleLevelRewriting
-    # diary_date: str
-    # title_diary: str
-    # primary_id_DiaryEntry: str
-    # created_at: datetime
-    # diary_entry: DiaryEntry
-    # # task config
-    # config_translator: TaskParameterConfig
-    # config_archivist: TaskParameterConfig
-    # config_rewriter: TaskParameterConfig
-    # config_reviewer: TaskParameterConfig

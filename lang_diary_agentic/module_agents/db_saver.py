@@ -66,11 +66,13 @@ def node_save_duckdb(state: AgentState, settings: SettingsVariables) -> AgentSta
     
     assert settings.GENERATION_DB_PATH is not None
     handler = HandlerDairyDB(settings.GENERATION_DB_PATH)
+    handler.init_table_diary()
 
     conn = duckdb.connect(settings.GENERATION_DB_PATH)
-    conn.execute("UPDATE diary_entries SET diary_replaced = ?, diary_rewritten = ? WHERE primary_id = ?", (
+    conn.execute("UPDATE diary_entries SET diary_replaced = ?, diary_rewritten = ?, evaluation_current_level = ? WHERE primary_id = ?", (
         processed.diary_replaced,
         processed.diary_rewritten,
+        processed.evaluation_current_level,
         diary_entry_primary_key
     ))
     conn.commit()

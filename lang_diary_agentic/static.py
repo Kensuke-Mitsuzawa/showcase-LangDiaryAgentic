@@ -5,7 +5,7 @@ import typing
 
 PossibleChoiceModeDeployment = typing.Literal["server_ollama", "server_custom_hf", "cloud_api"]
 PossibleCloudLLMProvider = typing.Literal['openai', 'gemini']
-PossibleLevelRewriting = typing.Literal['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+PossibleLevelRewriting = typing.Literal['NA', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 
 # ---- list of language codes ----
 # Iterate through all languages and filter for those that have an ISO 639 alpha_3 code
