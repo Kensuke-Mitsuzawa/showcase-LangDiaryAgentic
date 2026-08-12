@@ -1,6 +1,6 @@
-
+# Command to start the web app
 
 ```bash
-export $(grep -v '^#' .env | xargs) && Mode_Deployment=cloud_api uv run python app.py
+PATH_CONFIG=<a path to .env file> Mode_Deployment=cloud_api uv run python app.py
 ```
 
