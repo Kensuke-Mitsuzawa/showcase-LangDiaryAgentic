@@ -31,14 +31,12 @@ from lang_diary_agentic.module_agents import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
-# Initialize graph once at startup
-print("Initializing Graph...")
-# app_graph = init_graph()
-
 app = Flask(__name__)
 
 # TODO: loading the .env file and set to `SettingsVariables`.
 settings = SettingsVariables()
+
+logger.info(f"Path for the resource files: {settings.DB_BASE_DIR}")
 
 DB_PATH = settings.GENERATION_DB_PATH
 assert DB_PATH is not None

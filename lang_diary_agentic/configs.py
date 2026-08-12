@@ -10,8 +10,17 @@ from . import static
 
 logger = logging.getLogger(__name__)
 
-DOTENV = Path(__file__).parent.parent / ".env"
-assert Path(DOTENV).exists(), f".env file not found at {DOTENV}."
+# TODO: if the env var. is given, read from the env. var else use the default path.
+_path_config_given = os.environ.get("PATH_CONFIG", None)
+if _path_config_given is None:
+    _path_config = Path(__file__) / ".env"
+    assert Path(_path_config).exists(), f".env file not found at {_path_config}."
+    logger.info("The config file is loaded from the .env")
+else:
+    assert Path(_path_config_given).exists(), f"The variable `PATH_CONFIG` is given. But no file found at {_path_config_given}"
+    logger.info(f"The config file is loaded from the variable `PATH_CONFIG`.")
+    _path_config = Path(_path_config_given)
+# end if
 
 
 ConfigDefaultSetting = {
@@ -45,7 +54,7 @@ class SettingsVariables(BaseSettings):
     ErrorVectorDB_PATH: ty.Optional[str] = None
 
     # This sub-class tells Pydantic to look for a .env file
-    model_config = SettingsConfigDict(env_file=DOTENV, extra='allow')
+    model_config = SettingsConfigDict(env_file=_path_config, extra='allow')
 
     def model_post_init(self, context: ty.Any) -> None:
         self.GENERATION_DB_PATH = (Path(self.DB_BASE_DIR).absolute() / "data" / "diary_log.duckdb").as_posix()
